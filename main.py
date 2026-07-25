@@ -48,7 +48,7 @@ SEEN_IDS_FILE = Path("seen_ids.txt")
 REPORTS_DIR = Path("reports")
 REPORTS_DIR.mkdir(exist_ok=True)
 
-MAX_ARTICLES_PER_RUN = int(os.environ.get("MAX_ARTICLES_PER_RUN", "15"))
+MAX_ARTICLES_PER_RUN = int(os.environ.get("MAX_ARTICLES_PER_RUN", "20"))
 KEYWORD_OVERLAP_THRESHOLD = 0.7
 
 CATEGORY_MAP = {
@@ -257,6 +257,16 @@ def analyze_article(article: dict) -> dict:
 افغانستان و منطقه را رصد می‌کند.
 
 {EDITORIAL_RULES}
+
+نکته مهم درباره فیلتر ارتباط (relevant):
+این خبر از فیدی می‌آید که از قبل روی موضوع افغانستان/منطقه تنظیم شده است،
+پس پیش‌فرض این است که خبر مرتبط است ("relevant": true) مگر اینکه یکی از
+موارد زیر باشد:
+- تبلیغات، اسپم، یا کاملاً بی‌ربط به افغانستان/ایران/منطقه (مثلاً ورزش
+  اروپایی بدون ارتباط با افغان‌ها، یا خبر محلی کاملاً بی‌ربط کشور ثالث)
+- محتوای صریحاً ضد ایران
+سخت‌گیری نکنید؛ در موارد مبهم یا خاکستری، "relevant" را true بگذارید و
+اجازه دهید ویرایشگر انسانی بعداً تصمیم نهایی را بگیرد.
 
 فقط و فقط یک شیء JSON معتبر برگردانید (بدون هیچ متن اضافه، بدون Markdown)
 با این ساختار دقیق:
@@ -480,7 +490,7 @@ def main():
     log.info("%d articles remain after de-duplication", len(fresh_articles))
 
     analyzed = []
-    for art in fresh_articles[:MAX_ARTICLES_PER_RUN * 2]:  # analyze a buffer, since some get filtered out
+    for art in fresh_articles[:MAX_ARTICLES_PER_RUN * 3]:  # analyze a buffer, since some get filtered out
         try:
             result = analyze_article(art)
         except Exception as e:
