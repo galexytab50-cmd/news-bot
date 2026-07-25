@@ -292,10 +292,14 @@ def analyze_article(article: dict) -> dict:
 منبع: {article['source']}
 متن: {article['summary']}
 """
-    raw = call_deepseek(system_prompt, user_prompt, max_tokens=600)
+    raw = call_deepseek(system_prompt, user_prompt, max_tokens=1000)
 
-    # DeepSeek sometimes wraps JSON in ```json fences despite instructions
+    # DeepSeek sometimes wraps JSON in ```json fences, or adds stray text
+    # despite instructions -- extract the outermost {...} block defensively.
     cleaned = re.sub(r"^```(json)?|```$", "", raw.strip(), flags=re.MULTILINE).strip()
+    match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+    if match:
+        cleaned = match.group(0)
 
     try:
         result = json.loads(cleaned)
