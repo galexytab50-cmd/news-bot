@@ -264,11 +264,18 @@ def analyze_article(article: dict) -> dict:
   "relevant": true/false,
   "category": "سیاسی|اقتصادی|فرهنگی|مهاجرین|ورزشی",
   "priority": 1-5,
-  "title_fa": "عنوان ترجمه‌شده به فارسی",
-  "summary_fa": "خلاصه ۲ تا ۳ جمله‌ای به فارسی روان",
+  "title_fa": "عنوان ترجمه‌شده و خبری به فارسی (بدون هشتگ یا ایموجی)",
+  "summary_fa": "خلاصه ۳ تا ۵ جمله‌ای روان و بی‌طرف به فارسی، در حد یک پاراگراف کامل خبری",
+  "key_points": ["نکته کلیدی اول", "نکته کلیدی دوم", "نکته کلیدی سوم (حداکثر ۴ نکته)"],
+  "countries": ["افغانستان", "پاکستان"],
+  "country_flags": ["🇦🇫", "🇵🇰"],
   "reason": "دلیل کوتاه ارتباط یا عدم ارتباط"
 }}
-اگر خبر مرتبط نیست، "relevant" را false بگذارید و بقیه فیلدها را خالی رها کنید.
+
+نکات مهم:
+- "countries" و "country_flags" باید فقط کشورهای واقعاً مرتبط با خبر را شامل شوند (حداکثر ۳ کشور)، به ترتیب اولویت جغرافیایی بالا.
+- "key_points" باید نکات مشخص و خبری باشند، نه تکرار خلاصه.
+- اگر خبر مرتبط نیست، "relevant" را false بگذارید و بقیه فیلدها را خالی/آرایه خالی رها کنید.
 """
     user_prompt = f"""
 عنوان: {article['title']}
@@ -333,25 +340,61 @@ def send_telegram_message(text: str):
         resp.raise_for_status()
 
 
-def build_summary_message(analyzed_articles: list) -> str:
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    lines = [f"📰 <b>خلاصه اخبار IRAF Monitoring</b>\n🕐 {now}\n"]
+def format_article_message(art: dict) -> str:
+    """Builds a single rich article post matching the requested channel template:
 
-    # Sort by priority (1 = highest)
-    sorted_articles = sorted(analyzed_articles, key=lambda a: a.get("priority", 5))
+    #دسته
 
-    for art in sorted_articles:
-        tag = CATEGORY_MAP.get(art.get("category"), "")
-        title = art.get("title_fa", "")
-        summary = art.get("summary_fa", "")
-        link = art.get("link", "")
-        lines.append(f"{tag}\n<b>{title}</b>\n{summary}")
-        if link:
-            lines.append(f"🔗 {link}")
+    🇦🇫🏛️ عنوان خبر
+
+    📋 خلاصه:
+    ...
+
+    🔑 نکات کلیدی:
+    • ...
+
+    🌍 موضوع: کشورها | اولویت N
+
+    🔗 منبع خبر
+    """
+    category = art.get("category", "")
+    tag = CATEGORY_MAP.get(category, f"#{category}")
+    category_emoji = tag.split()[-1] if " " in tag else ""
+    flags = "".join(art.get("country_flags", []) or [])
+    title = art.get("title_fa", "")
+    summary = art.get("summary_fa", "")
+    key_points = art.get("key_points", []) or []
+    countries = art.get("countries", []) or []
+    priority = art.get("priority", "")
+    link = art.get("link", "")
+
+    lines = [f"#{category}", ""]
+    lines.append(f"{flags} {category_emoji} {title}".strip())
+    lines.append("")
+    if summary:
+        lines.append("📋 خلاصه:")
+        lines.append(summary)
         lines.append("")
+    if key_points:
+        lines.append("🔑 نکات کلیدی:")
+        for point in key_points:
+            lines.append(f"• {point}")
+        lines.append("")
+    if countries:
+        lines.append(f"🌍 موضوع: {' و '.join(countries)} | اولویت {priority}")
+    if link:
+        lines.append("")
+        lines.append(f'🔗 <a href="{link}">منبع خبر</a>')
 
-    lines.append("📡 @IrafMonitoring")
     return "\n".join(lines)
+
+
+def build_summary_message(analyzed_articles: list) -> list:
+    """Returns a list of message strings, one per article (Telegram posts
+    are more readable as separate messages with this richer template than
+    crammed into a single digest)."""
+    sorted_articles = sorted(analyzed_articles, key=lambda a: a.get("priority", 5))
+    return [format_article_message(art) for art in sorted_articles]
 
 
 # --------------------------------------------------------------------------
@@ -405,8 +448,12 @@ def main():
 
     log.info("%d relevant articles analyzed. Sending to Telegram...", len(analyzed))
 
-    summary_msg = build_summary_message(analyzed)
-    send_telegram_message(summary_msg)
+    article_messages = build_summary_message(analyzed)
+    for msg in article_messages:
+        try:
+            send_telegram_message(msg)
+        except Exception as e:
+            log.error("Failed to send article message: %s", e)
 
     try:
         report = generate_report(analyzed)
