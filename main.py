@@ -298,7 +298,9 @@ def analyze_article(article: dict) -> dict:
 
 def generate_report(analyzed_articles: list) -> str:
     """Ask DeepSeek to produce a short analytical report from the batch,
-    referencing style of past reports for consistency."""
+    referencing style of past reports for consistency. Returns a dict with
+    category/title/lead/body/conclusion fields matching the channel's
+    analytical-report template."""
     past_reports = sorted(REPORTS_DIR.glob("*.md"))[-3:]
     style_context = ""
     for p in past_reports:
@@ -312,12 +314,66 @@ def generate_report(analyzed_articles: list) -> str:
     system_prompt = f"""
 شما تحلیلگر ارشد کانال «IRAF Monitoring» هستید.
 {EDITORIAL_RULES}
-یک گزارش تحلیلی کوتاه (حداکثر ۳۰۰ کلمه) به فارسی از اخبار زیر بنویسید که
-روندها و اهمیت رویدادها برای مخاطب افغان/ایرانی را برجسته کند.
+
+بر اساس اخبار زیر، یک گزارش تحلیلی عمیق به فارسی بنویسید که مهم‌ترین
+یا پرمعناترین رویداد را برای مخاطب افغان/ایرانی برجسته و تحلیل کند.
 سبک نوشتاری گزارش‌های قبلی را در نظر بگیرید (در ادامه آمده):
 {style_context}
+
+فقط و فقط یک شیء JSON معتبر برگردانید (بدون متن اضافه، بدون Markdown fence)
+با این ساختار دقیق:
+{{
+  "category": "سیاسی|اقتصادی|فرهنگی|مهاجرین|ورزشی",
+  "headline": "عنوان کوتاه و خبری گزارش",
+  "lead": "یک پاراگراف لید که موضوع، اهمیت و زاویه اصلی را معرفی می‌کند",
+  "body": "دو تا چهار پاراگراف بدنه که با \\n\\n از هم جدا شده باشند، شامل زمینه، جزئیات و تحلیل",
+  "conclusion": "یک پاراگراف نتیجه‌گیری که پیامد یا چشم‌انداز موضوع را جمع‌بندی می‌کند"
+}}
 """
-    return call_deepseek(system_prompt, items_text, max_tokens=900)
+    raw = call_deepseek(system_prompt, items_text, max_tokens=1400)
+    cleaned = re.sub(r"^```(json)?|```$", "", raw.strip(), flags=re.MULTILINE).strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        log.warning("Could not parse report JSON: %s", raw[:300])
+        return {}
+
+
+def format_report_message(report: dict) -> str:
+    """Builds the analytical report message matching the requested template:
+
+    #دسته
+
+    📝 گزارش تحلیلی
+
+    📰 عنوان
+
+    لید:
+    ...
+
+    بدنه:
+    ...
+
+    نتیجه‌گیری:
+    ...
+    """
+    category = report.get("category", "")
+    lines = [f"#{category}", "", "📝 گزارش تحلیلی", ""]
+    if report.get("headline"):
+        lines.append(f"📰 {report['headline']}")
+        lines.append("")
+    if report.get("lead"):
+        lines.append("لید:")
+        lines.append(report["lead"])
+        lines.append("")
+    if report.get("body"):
+        lines.append("بدنه:")
+        lines.append(report["body"])
+        lines.append("")
+    if report.get("conclusion"):
+        lines.append("نتیجه‌گیری:")
+        lines.append(report["conclusion"])
+    return "\n".join(lines)
 
 
 # --------------------------------------------------------------------------
@@ -457,12 +513,12 @@ def main():
 
     try:
         report = generate_report(analyzed)
-        send_telegram_message(f"📊 <b>گزارش تحلیلی</b>\n\n{report}")
-
-        report_path = REPORTS_DIR / f"report_{datetime.now(timezone.utc):%Y%m%d_%H%M}.md"
-        report_path.write_text(report, encoding="utf-8")
+        if report:
+            send_telegram_message(format_report_message(report))
+            report_path = REPORTS_DIR / f"report_{datetime.now(timezone.utc):%Y%m%d_%H%M}.md"
+            report_path.write_text(format_report_message(report), encoding="utf-8")
     except Exception as e:
-        log.error("Report generation/sending failed (summary was still sent): %s", e)
+        log.error("Report generation/sending failed (article posts were still sent): %s", e)
 
     log.info("Run complete.")
 
