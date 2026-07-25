@@ -292,7 +292,11 @@ def call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int = 2000) 
             log.error("DeepSeek %s error: %s", resp.status_code, resp.text[:1000])
             resp.raise_for_status()
         data = resp.json()
-        return data["choices"][0]["message"]["content"].strip()
+        choice = data["choices"][0]
+        finish_reason = choice.get("finish_reason", "")
+        if finish_reason == "length":
+            log.warning("DeepSeek response was CUT OFF (finish_reason=length, max_tokens too low)")
+        return choice["message"]["content"].strip()
     except requests.exceptions.RequestException as e:
         log.error("DeepSeek request failed: %s", e)
         raise
@@ -345,7 +349,7 @@ def analyze_article(article: dict) -> dict:
 منبع: {article['source']}
 متن: {article['summary']}
 """
-    raw = call_deepseek(system_prompt, user_prompt, max_tokens=1000)
+    raw = call_deepseek(system_prompt, user_prompt, max_tokens=1500)
 
     # DeepSeek sometimes wraps JSON in ```json fences, or adds stray text
     # despite instructions -- extract the outermost {...} block defensively.
@@ -357,7 +361,7 @@ def analyze_article(article: dict) -> dict:
     try:
         result = json.loads(cleaned)
     except json.JSONDecodeError:
-        log.warning("Could not parse DeepSeek JSON for '%s': %s", article["title"], raw[:300])
+        log.warning("Could not parse DeepSeek JSON for '%s': %s", article["title"], raw[:1500])
         return {"relevant": False}
 
     if result.get("relevant"):
