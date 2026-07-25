@@ -59,6 +59,54 @@ CATEGORY_MAP = {
     "ورزشی": "#ورزشی ⚽",
 }
 
+# Deterministic geographic priority tiers (do NOT let the model decide this
+# freely -- it was mixing priorities inconsistently). Tier 1 = highest.
+GEO_PRIORITY_TIERS = {
+    1: {"افغانستان"},
+    2: {"ایران"},
+    3: {"پاکستان", "هند", "چین"},
+    4: {
+        "تاجیکستان", "ازبکستان", "ترکمنستان", "قزاقستان", "قرقیزستان",
+        "آسیای مرکزی",
+    },
+}
+SPORTS_PRIORITY = 5  # ورزشی همیشه اولویت ۵، مستقل از کشور
+DEFAULT_PRIORITY = 3  # fallback when no recognized country is present
+
+FLAG_MAP = {
+    "افغانستان": "🇦🇫",
+    "ایران": "🇮🇷",
+    "پاکستان": "🇵🇰",
+    "هند": "🇮🇳",
+    "چین": "🇨🇳",
+    "تاجیکستان": "🇹🇯",
+    "ازبکستان": "🇺🇿",
+    "ترکمنستان": "🇹🇲",
+    "قزاقستان": "🇰🇿",
+    "قرقیزستان": "🇰🇬",
+}
+
+
+def flags_for_countries(countries: list) -> list:
+    """Derives flag emoji from country names in code, so a mismatched flag
+    from the model can never slip through."""
+    return [FLAG_MAP[c] for c in (countries or []) if c in FLAG_MAP]
+
+
+def compute_priority(category: str, countries: list) -> int:
+    """Determines priority deterministically from the geographic rule,
+    instead of trusting the model's own free-form priority number."""
+    if category == "ورزشی":
+        return SPORTS_PRIORITY
+
+    best = None
+    for country in (countries or []):
+        for tier, members in GEO_PRIORITY_TIERS.items():
+            if country in members:
+                if best is None or tier < best:
+                    best = tier
+    return best if best is not None else DEFAULT_PRIORITY
+
 EDITORIAL_RULES = """
 قوانین ویرایشی (باید دقیقاً رعایت شوند):
 1. اولویت جغرافیایی: افغانستان (اول) > ایران (دوم) > پاکستان/هند/چین (در ارتباط با افغانستان) (سوم) > کشورهای آسیای مرکزی (چهارم) > ورزش بین‌المللی/افغانستان (پنجم)
@@ -268,12 +316,18 @@ def analyze_article(article: dict) -> dict:
 سخت‌گیری نکنید؛ در موارد مبهم یا خاکستری، "relevant" را true بگذارید و
 اجازه دهید ویرایشگر انسانی بعداً تصمیم نهایی را بگیرد.
 
+نکته مهم درباره کشورها:
+"countries" و "country_flags" باید فقط از این نام‌های استاندارد استفاده کنند
+(دقیقاً همین املا، حداکثر ۳ کشور، به ترتیب ارتباط):
+افغانستان 🇦🇫 | ایران 🇮🇷 | پاکستان 🇵🇰 | هند 🇮🇳 | چین 🇨🇳 | تاجیکستان 🇹🇯 |
+ازبکستان 🇺🇿 | ترکمنستان 🇹🇲 | قزاقستان 🇰🇿 | قرقیزستان 🇰🇬
+اولویت را شما تعیین نکنید؛ آن در کد به‌صورت خودکار محاسبه می‌شود.
+
 فقط و فقط یک شیء JSON معتبر برگردانید (بدون هیچ متن اضافه، بدون Markdown)
 با این ساختار دقیق:
 {{
   "relevant": true/false,
   "category": "سیاسی|اقتصادی|فرهنگی|مهاجرین|ورزشی",
-  "priority": 1-5,
   "title_fa": "عنوان ترجمه‌شده و خبری به فارسی (بدون هشتگ یا ایموجی)",
   "summary_fa": "خلاصه ۳ تا ۵ جمله‌ای روان و بی‌طرف به فارسی، در حد یک پاراگراف کامل خبری",
   "key_points": ["نکته کلیدی اول", "نکته کلیدی دوم", "نکته کلیدی سوم (حداکثر ۴ نکته)"],
@@ -283,7 +337,6 @@ def analyze_article(article: dict) -> dict:
 }}
 
 نکات مهم:
-- "countries" و "country_flags" باید فقط کشورهای واقعاً مرتبط با خبر را شامل شوند (حداکثر ۳ کشور)، به ترتیب اولویت جغرافیایی بالا.
 - "key_points" باید نکات مشخص و خبری باشند، نه تکرار خلاصه.
 - اگر خبر مرتبط نیست، "relevant" را false بگذارید و بقیه فیلدها را خالی/آرایه خالی رها کنید.
 """
@@ -306,6 +359,10 @@ def analyze_article(article: dict) -> dict:
     except json.JSONDecodeError:
         log.warning("Could not parse DeepSeek JSON for '%s': %s", article["title"], raw[:300])
         return {"relevant": False}
+
+    if result.get("relevant"):
+        result["priority"] = compute_priority(result.get("category", ""), result.get("countries", []))
+        result["country_flags"] = flags_for_countries(result.get("countries", []))
 
     return result
 
