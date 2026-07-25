@@ -15,6 +15,7 @@ import sys
 import json
 import hashlib
 import logging
+import time
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -48,7 +49,7 @@ SEEN_IDS_FILE = Path("seen_ids.txt")
 REPORTS_DIR = Path("reports")
 REPORTS_DIR.mkdir(exist_ok=True)
 
-MAX_ARTICLES_PER_RUN = int(os.environ.get("MAX_ARTICLES_PER_RUN", "20"))
+MAX_ARTICLES_PER_RUN = int(os.environ.get("MAX_ARTICLES_PER_RUN", "0"))  # 0 = no limit
 KEYWORD_OVERLAP_THRESHOLD = 0.7
 
 CATEGORY_MAP = {
@@ -547,7 +548,7 @@ def main():
     auth_token = inoreader_login()
 
     log.info("Fetching articles...")
-    articles = fetch_articles(auth_token, limit=50)
+    articles = fetch_articles(auth_token, limit=200)
     log.info("Fetched %d articles", len(articles))
 
     seen = load_seen_ids()
@@ -555,7 +556,7 @@ def main():
     log.info("%d articles remain after de-duplication", len(fresh_articles))
 
     analyzed = []
-    for art in fresh_articles[:MAX_ARTICLES_PER_RUN * 3]:  # analyze a buffer, since some get filtered out
+    for art in fresh_articles:  # no cap: analyze every fresh article this run
         try:
             result = analyze_article(art)
         except Exception as e:
@@ -567,9 +568,6 @@ def main():
         if result.get("relevant"):
             result["link"] = art["link"]
             analyzed.append(result)
-
-        if len(analyzed) >= MAX_ARTICLES_PER_RUN:
-            break
 
     save_seen_ids(seen)
 
@@ -583,6 +581,7 @@ def main():
     for msg in article_messages:
         try:
             send_telegram_message(msg)
+            time.sleep(1.2)  # stay under Telegram's rate limit when posting many articles
         except Exception as e:
             log.error("Failed to send article message: %s", e)
 
