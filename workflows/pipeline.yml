@@ -1,0 +1,49 @@
+name: IRAF Monitoring Pipeline
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore seen_ids cache
+        uses: actions/cache@v4
+        with:
+          path: seen_ids.txt
+          key: seen-ids-${{ github.run_id }}
+          restore-keys: |
+            seen-ids-
+
+      - name: Run pipeline
+        env:
+          INOREADER_APP_ID: ${{ secrets.INOREADER_APP_ID }}
+          INOREADER_APP_KEY: ${{ secrets.INOREADER_APP_KEY }}
+          INOREADER_EMAIL: ${{ secrets.INOREADER_EMAIL }}
+          INOREADER_PASSWORD: ${{ secrets.INOREADER_PASSWORD }}
+          INOREADER_TAG: ${{ secrets.INOREADER_TAG }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+        run: python main.py
+
+      - name: Commit updated seen_ids and reports
+        run: |
+          git config user.name "iraf-bot"
+          git config user.email "iraf-bot@users.noreply.github.com"
+          git add seen_ids.txt reports/ || true
+          git diff --staged --quiet || git commit -m "Update seen_ids and reports [skip ci]"
+          git push || true
