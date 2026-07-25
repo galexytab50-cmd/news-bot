@@ -372,57 +372,63 @@ def analyze_article(article: dict) -> dict:
     return result
 
 
-def generate_report(analyzed_articles: list) -> str:
-    """Ask DeepSeek to produce a short analytical report from the batch,
-    referencing style of past reports for consistency. Returns a dict with
-    category/title/lead/body/conclusion fields matching the channel's
-    analytical-report template."""
+def generate_article_report(article_result: dict) -> dict:
+    """Ask DeepSeek to write a dedicated analytical report for a single
+    article that was just posted to the channel. Returns a dict with
+    تیتر/لید/بدنه/جمع‌بندی fields."""
     past_reports = sorted(REPORTS_DIR.glob("*.md"))[-3:]
     style_context = ""
     for p in past_reports:
         style_context += p.read_text(encoding="utf-8")[:1500] + "\n---\n"
 
-    items_text = "\n".join(
-        f"- [{a.get('category')}] {a.get('title_fa')}: {a.get('summary_fa')}"
-        for a in analyzed_articles
-    )
+    key_points_text = "\n".join(f"- {kp}" for kp in article_result.get("key_points", []) or [])
+    user_prompt = f"""
+عنوان خبر: {article_result.get('title_fa', '')}
+دسته: {article_result.get('category', '')}
+خلاصه: {article_result.get('summary_fa', '')}
+نکات کلیدی:
+{key_points_text}
+"""
 
     system_prompt = f"""
 شما تحلیلگر ارشد کانال «IRAF Monitoring» هستید.
 {EDITORIAL_RULES}
 
-بر اساس اخبار زیر، یک گزارش تحلیلی عمیق به فارسی بنویسید که مهم‌ترین
-یا پرمعناترین رویداد را برای مخاطب افغان/ایرانی برجسته و تحلیل کند.
+بر اساس خبری که در ادامه آمده، یک گزارش تحلیلی عمیق و مستقل به فارسی
+بنویسید که زمینه، اهمیت و پیامدهای این خبر را برای مخاطب افغان/ایرانی
+باز کند.
 سبک نوشتاری گزارش‌های قبلی را در نظر بگیرید (در ادامه آمده):
 {style_context}
 
 فقط و فقط یک شیء JSON معتبر برگردانید (بدون متن اضافه، بدون Markdown fence)
 با این ساختار دقیق:
 {{
-  "category": "سیاسی|اقتصادی|فرهنگی|مهاجرین|ورزشی",
-  "headline": "عنوان کوتاه و خبری گزارش",
-  "lead": "یک پاراگراف لید که موضوع، اهمیت و زاویه اصلی را معرفی می‌کند",
-  "body": "دو تا چهار پاراگراف بدنه که با \\n\\n از هم جدا شده باشند، شامل زمینه، جزئیات و تحلیل",
-  "conclusion": "یک پاراگراف نتیجه‌گیری که پیامد یا چشم‌انداز موضوع را جمع‌بندی می‌کند"
+  "تیتر": "عنوان کوتاه و خبری گزارش تحلیلی",
+  "لید": "یک پاراگراف لید که موضوع، اهمیت و زاویه اصلی را معرفی می‌کند",
+  "بدنه": "دو تا چهار پاراگراف بدنه که با \\n\\n از هم جدا شده باشند، شامل زمینه، جزئیات و تحلیل",
+  "جمع‌بندی": "یک پاراگراف جمع‌بندی که پیامد یا چشم‌انداز موضوع را جمع می‌کند"
 }}
 """
-    raw = call_deepseek(system_prompt, items_text, max_tokens=1400)
+    raw = call_deepseek(system_prompt, user_prompt, max_tokens=1500)
     cleaned = re.sub(r"^```(json)?|```$", "", raw.strip(), flags=re.MULTILINE).strip()
+    match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+    if match:
+        cleaned = match.group(0)
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
-        log.warning("Could not parse report JSON: %s", raw[:300])
+        log.warning("Could not parse per-article report JSON: %s", raw[:1500])
         return {}
 
 
-def format_report_message(report: dict) -> str:
-    """Builds the analytical report message matching the requested template:
+def format_article_report_message(report: dict, category: str) -> str:
+    """Builds the analytical report message that follows each article post:
 
     #دسته
 
     📝 گزارش تحلیلی
 
-    📰 عنوان
+    تیتر: ...
 
     لید:
     ...
@@ -430,25 +436,24 @@ def format_report_message(report: dict) -> str:
     بدنه:
     ...
 
-    نتیجه‌گیری:
+    جمع‌بندی:
     ...
     """
-    category = report.get("category", "")
     lines = [f"#{category}", "", "📝 گزارش تحلیلی", ""]
-    if report.get("headline"):
-        lines.append(f"📰 {report['headline']}")
+    if report.get("تیتر"):
+        lines.append(f"تیتر: {report['تیتر']}")
         lines.append("")
-    if report.get("lead"):
+    if report.get("لید"):
         lines.append("لید:")
-        lines.append(report["lead"])
+        lines.append(report["لید"])
         lines.append("")
-    if report.get("body"):
+    if report.get("بدنه"):
         lines.append("بدنه:")
-        lines.append(report["body"])
+        lines.append(report["بدنه"])
         lines.append("")
-    if report.get("conclusion"):
-        lines.append("نتیجه‌گیری:")
-        lines.append(report["conclusion"])
+    if report.get("جمع‌بندی"):
+        lines.append("جمع‌بندی:")
+        lines.append(report["جمع‌بندی"])
     return "\n".join(lines)
 
 
@@ -577,22 +582,29 @@ def main():
 
     log.info("%d relevant articles analyzed. Sending to Telegram...", len(analyzed))
 
-    article_messages = build_summary_message(analyzed)
-    for msg in article_messages:
+    sorted_articles = sorted(analyzed, key=lambda a: a.get("priority", 5))
+
+    for art in sorted_articles:
+        # 1) Post the article itself
         try:
-            send_telegram_message(msg)
-            time.sleep(1.2)  # stay under Telegram's rate limit when posting many articles
+            send_telegram_message(format_article_message(art))
+            time.sleep(1.2)  # stay under Telegram's rate limit
         except Exception as e:
             log.error("Failed to send article message: %s", e)
+            continue  # skip the report if the article post itself failed
 
-    try:
-        report = generate_report(analyzed)
-        if report:
-            send_telegram_message(format_report_message(report))
-            report_path = REPORTS_DIR / f"report_{datetime.now(timezone.utc):%Y%m%d_%H%M}.md"
-            report_path.write_text(format_report_message(report), encoding="utf-8")
-    except Exception as e:
-        log.error("Report generation/sending failed (article posts were still sent): %s", e)
+        # 2) Immediately generate + post the analytical report for this article
+        try:
+            report = generate_article_report(art)
+            if report:
+                report_msg = format_article_report_message(report, art.get("category", ""))
+                send_telegram_message(report_msg)
+                time.sleep(1.2)
+
+                report_path = REPORTS_DIR / f"report_{datetime.now(timezone.utc):%Y%m%d_%H%M%S}.md"
+                report_path.write_text(report_msg, encoding="utf-8")
+        except Exception as e:
+            log.error("Report generation/sending failed for '%s': %s", art.get("title_fa", ""), e)
 
     log.info("Run complete.")
 
