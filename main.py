@@ -409,7 +409,7 @@ def analyze_article(article: dict) -> dict:
 منبع: {article['source']}
 متن: {article['summary']}
 """
-    raw = call_deepseek(system_prompt, user_prompt, max_tokens=1500)
+    raw = call_deepseek(system_prompt, user_prompt, max_tokens=2200)
 
     # DeepSeek sometimes wraps JSON in ```json fences, or adds stray text
     # despite instructions -- extract the outermost {...} block defensively.
