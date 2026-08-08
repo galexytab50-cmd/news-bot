@@ -338,6 +338,12 @@ def deduplicate(articles: list, seen: set) -> list:
 # DeepSeek
 # --------------------------------------------------------------------------
 
+class DeepSeekBalanceError(Exception):
+    """Raised when the DeepSeek account is out of credit -- no point
+    retrying further calls in this run once this happens."""
+    pass
+
+
 def call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int = 2000) -> str:
     """Central place for all DeepSeek calls. Always uses requests' `json=`
     parameter so the library handles UTF-8 encoding and escaping correctly
@@ -364,6 +370,9 @@ def call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int = 2000) 
             json=payload,  # <-- key fix: let requests serialize + set charset
             timeout=90,
         )
+        if resp.status_code == 402:
+            log.error("DeepSeek balance depleted: %s", resp.text[:500])
+            raise DeepSeekBalanceError("DeepSeek account is out of credit (402 Insufficient Balance)")
         if resp.status_code != 200:
             log.error("DeepSeek %s error: %s", resp.status_code, resp.text[:1000])
             resp.raise_for_status()
@@ -579,7 +588,7 @@ def format_article_report_message(report: dict, category: str) -> str:
 # Telegram
 # --------------------------------------------------------------------------
 
-def send_telegram_message(text: str):
+def send_telegram_message(text: str, max_retries: int = 3):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     # Telegram hard limit is 4096 chars; trim defensively
     text = text[:4090]
@@ -589,10 +598,24 @@ def send_telegram_message(text: str):
         "parse_mode": "HTML",
         "disable_web_page_preview": False,
     }
-    resp = requests.post(url, json=payload, timeout=30)
-    if resp.status_code != 200:
+
+    for attempt in range(max_retries + 1):
+        resp = requests.post(url, json=payload, timeout=30)
+        if resp.status_code == 200:
+            return
+        if resp.status_code == 429:
+            retry_after = 5
+            try:
+                retry_after = resp.json().get("parameters", {}).get("retry_after", 5)
+            except Exception:
+                pass
+            log.warning("Telegram rate-limited; waiting %ss before retry (%d/%d)", retry_after, attempt + 1, max_retries)
+            time.sleep(retry_after + 1)
+            continue
         log.error("Telegram error: %s", resp.text[:500])
         resp.raise_for_status()
+
+    log.error("Telegram send failed after %d retries due to rate limiting", max_retries)
 
 
 def format_article_message(art: dict) -> str:
@@ -682,6 +705,10 @@ def main():
     for art in fresh_articles:  # no cap: analyze every fresh article this run
         try:
             result = analyze_article(art)
+        except DeepSeekBalanceError:
+            log.error("Stopping run: DeepSeek balance is depleted. Please top up your DeepSeek account.")
+            save_seen_ids(seen)
+            return
         except Exception as e:
             log.error("Failed to analyze article '%s': %s", art["title"], e)
             continue
@@ -706,7 +733,7 @@ def main():
         # 1) Post the article itself
         try:
             send_telegram_message(format_article_message(art))
-            time.sleep(1.2)  # stay under Telegram's rate limit
+            time.sleep(2.5)  # stay under Telegram's rate limit
         except Exception as e:
             log.error("Failed to send article message: %s", e)
             continue  # skip the report if the article post itself failed
@@ -717,10 +744,13 @@ def main():
             if report:
                 report_msg = format_article_report_message(report, art.get("category", ""))
                 send_telegram_message(report_msg)
-                time.sleep(1.2)
+                time.sleep(2.5)
 
                 report_path = REPORTS_DIR / f"report_{datetime.now(timezone.utc):%Y%m%d_%H%M%S}.md"
                 report_path.write_text(report_msg, encoding="utf-8")
+        except DeepSeekBalanceError:
+            log.error("Stopping run: DeepSeek balance is depleted. Please top up your DeepSeek account.")
+            return
         except Exception as e:
             log.error("Report generation/sending failed for '%s': %s", art.get("title_fa", ""), e)
 
