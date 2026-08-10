@@ -2,7 +2,7 @@ name: IRAF Monitoring Pipeline
 
 on:
   schedule:
-    - cron: "20 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch: {}
 
 jobs:
@@ -19,14 +19,6 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
-
-      - name: Restore seen_ids cache
-        uses: actions/cache@v4
-        with:
-          path: seen_ids.txt
-          key: seen-ids-${{ github.run_id }}
-          restore-keys: |
-            seen-ids-
 
       - name: Run pipeline
         env:
