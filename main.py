@@ -50,7 +50,7 @@ REPORTS_DIR = Path("reports")
 REPORTS_DIR.mkdir(exist_ok=True)
 
 MAX_ARTICLES_PER_RUN = int(os.environ.get("MAX_ARTICLES_PER_RUN", "0"))  # 0 = no limit
-KEYWORD_OVERLAP_THRESHOLD = 0.7
+KEYWORD_OVERLAP_THRESHOLD = 0.5
 
 CATEGORY_MAP = {
     "سیاسی": "#سیاسی 🏛️",
@@ -264,7 +264,7 @@ def inoreader_login() -> str:
     raise RuntimeError("Inoreader login failed: no Auth token in response")
 
 
-def fetch_articles(auth_token: str, limit: int = 50) -> list:
+def fetch_articles(auth_token: str, limit: int = 50, max_age_hours: int = 48) -> list:
     url = f"https://www.inoreader.com/reader/api/0/stream/contents/{INOREADER_TAG}"
     headers = {
         "Authorization": f"GoogleLogin auth={auth_token}",
@@ -275,6 +275,8 @@ def fetch_articles(auth_token: str, limit: int = 50) -> list:
     resp = requests.get(url, headers=headers, params=params, timeout=30)
     resp.raise_for_status()
     data = resp.json()
+
+    cutoff_ts = datetime.now(timezone.utc).timestamp() - (max_age_hours * 3600)
 
     articles = []
     for item in data.get("items", []):
@@ -292,8 +294,14 @@ def fetch_articles(auth_token: str, limit: int = 50) -> list:
             link = canonical[0].get("href", "")
 
         source = sanitize_text(item.get("origin", {}).get("title", ""))
+        published = item.get("published")  # unix timestamp from Inoreader
 
         if not title:
+            continue
+
+        # Safety net: skip stale articles even if they somehow weren't
+        # caught by seen_ids (e.g. a bad backlog after downtime).
+        if published and published < cutoff_ts:
             continue
 
         articles.append({
@@ -302,7 +310,11 @@ def fetch_articles(auth_token: str, limit: int = 50) -> list:
             "summary": summary[:2000],  # cap length defensively
             "link": link,
             "source": source,
+            "published": published or 0,
         })
+
+    # Newest first, so if a run limit is ever hit, freshest news wins.
+    articles.sort(key=lambda a: a["published"], reverse=True)
     return articles
 
 
@@ -395,6 +407,9 @@ def analyze_article(article: dict) -> dict:
 
 {EDITORIAL_RULES}
 
+{IRAF_TERMINOLOGY_RULES}
+این اصطلاحات را در "title_fa" و "summary_fa" همیشه و بدون استثنا رعایت کنید.
+
 نکته مهم درباره فیلتر ارتباط (relevant):
 این خبر از فیدی می‌آید که از قبل روی موضوع افغانستان/منطقه تنظیم شده است،
 پس پیش‌فرض این است که خبر مرتبط است ("relevant": true) مگر اینکه یکی از
@@ -455,133 +470,6 @@ def analyze_article(article: dict) -> dict:
 
     return result
 
-
-def generate_article_report(article_result: dict) -> dict:
-    """Ask DeepSeek to write a dedicated analytical report for a single
-    article that was just posted to the channel. Returns a dict with
-    تیتر/لید/بدنه/جمع‌بندی fields."""
-    past_reports = sorted(REPORTS_DIR.glob("*.md"))[-3:]
-    style_context = ""
-    for p in past_reports:
-        style_context += p.read_text(encoding="utf-8")[:1500] + "\n---\n"
-
-    key_points_text = "\n".join(f"- {kp}" for kp in article_result.get("key_points", []) or [])
-    user_prompt = f"""
-عنوان خبر: {article_result.get('title_fa', '')}
-دسته: {article_result.get('category', '')}
-خلاصه: {article_result.get('summary_fa', '')}
-نکات کلیدی:
-{key_points_text}
-"""
-
-    system_prompt = f"""
-شما تحلیلگر ارشد و سردبیر تحریریه‌ی هوشمند «خبرگزاری ایراف» هستید.
-
-{EDITORIAL_RULES}
-
-روند کاری که باید دقیقاً طی کنید (هر مرحله را واقعاً انجام دهید، نه فقط
-عبور کنید):
-
-مرحله ۱ — درک موضوع:
-ابتدا خبر را کامل بخوانید و بفهمید دقیقاً درباره‌ی چیست: چه رویدادی رخ داده،
-چه بازیگرانی درگیرند، و چرا مهم است.
-
-مرحله ۲ — تشخیص حوزه:
-مشخص کنید این خبر به کدام‌یک از حوزه‌های سیاست رسانه‌ای زیر تعلق دارد
-(می‌تواند بیش از یک حوزه هم باشد؛ مثلاً یک خبر می‌تواند هم «سیاسی» و هم
-«امنیتی» باشد):
-سیاسی | امنیتی | بین‌المللی | اقتصادی | مهاجرین | فرهنگی | فلسطین و مقاومت اسلامی | ایران
-
-مرحله ۳ — اعمال دقیق سیاست‌های همان حوزه (خط مشی رسمی خبرگزاری ایراف):
-{IRAF_MEDIA_POLICY}
-فقط بندهای سیاستی حوزه(های) تشخیص‌داده‌شده در مرحله ۲ را به‌کار ببرید و در
-تحلیل، زاویه‌ی خبر، کلمات و قضاوت‌های ضمنی متن، این سیاست‌ها را منعکس کنید.
-
-{IRAF_TERMINOLOGY_RULES}
-این اصطلاحات صرف‌نظر از حوزه‌ی خبر، همیشه و بدون استثنا باید رعایت شوند.
-
-مرحله ۴ — نگارش با رعایت اصول سئوی محتوایی (برای ایندکس بهتر در گوگل):
-- «تیتر» باید کوتاه (حداکثر ۶۰-۷۰ کاراکتر)، خبری، و شامل مهم‌ترین کلمه
-  کلیدی موضوع (مثلاً نام کشور/رویداد) در همان ابتدای تیتر باشد.
-- «لید» باید در همان جمله‌ی اول پاسخ چه‌کسی/چه‌چیزی/کجا/چه‌زمانی را بدهد و
-  کلمه کلیدی اصلی را به‌طور طبیعی تکرار کند (بدون کلمه‌چینی اجباری).
-- «بدنه» باید پاراگراف‌بندی کوتاه (۳ تا ۵ جمله در هر پاراگراف) داشته باشد
-  تا برای موتورهای جست‌وجو و مخاطب موبایل خوانا باشد؛ کلمات کلیدی مرتبط
-  (نام مکان‌ها، نهادها، اصطلاحات موضوع) را به‌طور طبیعی و بدون تکرار
-  مصنوعی در طول متن پخش کنید.
-- از عناوین کلیک‌طعمه (clickbait) و ادعاهای غیرواقعی پرهیز کنید؛ گوگل
-  محتوای گمراه‌کننده را جریمه می‌کند.
-- «جمع‌بندی» باید پیام نهایی را در یک یا دو جمله‌ی روشن و قابل استناد جمع کند.
-
-مرحله ۵ — تاکید مجدد بر سیاست‌ها (بازبینی نهایی قبل از خروجی):
-پیش از نوشتن خروجی نهایی، یک‌بار دیگر متن را در برابر این قوانین بسنجید:
-۱) هیچ محتوای ضد ایران نباشد. ۲) اصطلاحات الزامی رعایت شده باشند (طالبان،
-رهبری، نظام جمهوری اسلامی — طبق مرحله ۳). ۳) لحن حمایت‌گر از مردم
-افغانستان و پذیرش طالبان به‌عنوان واقعیت عینی، بدون شناسایی حقوقی رسمی.
-۴) اگر حوزه امنیتی/بین‌المللی است، مواضع دقیقاً مطابق بندهای بالا (مخالفت
-با مداخله غرب، برجسته‌سازی خطر داعش، تاکید بر مسئولیت‌پذیری امنیتی حکومت
-افغانستان) باشد. ۵) اگر حوزه ایران است، پایبندی به منافع ملی و امنیت
-ایران، و مقابله با جنگ شناختی/اخبار جعلی رعایت شده باشد. اگر متن این
-معیارها را نقض می‌کند، پیش از خروجی اصلاحش کنید.
-
-فقط و فقط یک شیء JSON معتبر برگردانید (بدون متن اضافه، بدون Markdown fence)
-با این ساختار دقیق:
-{{
-  "تیتر": "عنوان کوتاه، خبری و سئو-دوست گزارش تحلیلی",
-  "لید": "یک پاراگراف لید که موضوع، اهمیت و زاویه اصلی را معرفی می‌کند",
-  "بدنه": "دو تا چهار پاراگراف بدنه که با \\n\\n از هم جدا شده باشند، شامل زمینه، جزئیات و تحلیل مبتنی بر سیاست‌های بالا",
-  "جمع‌بندی": "یک پاراگراف جمع‌بندی که پیامد یا چشم‌انداز موضوع را جمع می‌کند"
-}}
-
-سبک نوشتاری گزارش‌های قبلی را هم در نظر بگیرید (در ادامه آمده):
-{style_context}
-"""
-    raw = call_deepseek(system_prompt, user_prompt, max_tokens=1800)
-    cleaned = re.sub(r"^```(json)?|```$", "", raw.strip(), flags=re.MULTILINE).strip()
-    match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
-    if match:
-        cleaned = match.group(0)
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        log.warning("Could not parse per-article report JSON: %s", raw[:1500])
-        return {}
-
-
-def format_article_report_message(report: dict, category: str) -> str:
-    """Builds the analytical report message that follows each article post:
-
-    #دسته
-
-    📝 گزارش تحلیلی
-
-    تیتر: ...
-
-    لید:
-    ...
-
-    بدنه:
-    ...
-
-    جمع‌بندی:
-    ...
-    """
-    lines = [f"#{category}", "", "📝 گزارش تحلیلی", ""]
-    if report.get("تیتر"):
-        lines.append(f"تیتر: {report['تیتر']}")
-        lines.append("")
-    if report.get("لید"):
-        lines.append("لید:")
-        lines.append(report["لید"])
-        lines.append("")
-    if report.get("بدنه"):
-        lines.append("بدنه:")
-        lines.append(report["بدنه"])
-        lines.append("")
-    if report.get("جمع‌بندی"):
-        lines.append("جمع‌بندی:")
-        lines.append(report["جمع‌بندی"])
-    return "\n".join(lines)
 
 
 # --------------------------------------------------------------------------
@@ -730,29 +618,11 @@ def main():
     sorted_articles = sorted(analyzed, key=lambda a: a.get("priority", 5))
 
     for art in sorted_articles:
-        # 1) Post the article itself
         try:
             send_telegram_message(format_article_message(art))
-            time.sleep(2.5)  # stay under Telegram's rate limit
+            time.sleep(1.5)  # stay under Telegram's rate limit
         except Exception as e:
             log.error("Failed to send article message: %s", e)
-            continue  # skip the report if the article post itself failed
-
-        # 2) Immediately generate + post the analytical report for this article
-        try:
-            report = generate_article_report(art)
-            if report:
-                report_msg = format_article_report_message(report, art.get("category", ""))
-                send_telegram_message(report_msg)
-                time.sleep(2.5)
-
-                report_path = REPORTS_DIR / f"report_{datetime.now(timezone.utc):%Y%m%d_%H%M%S}.md"
-                report_path.write_text(report_msg, encoding="utf-8")
-        except DeepSeekBalanceError:
-            log.error("Stopping run: DeepSeek balance is depleted. Please top up your DeepSeek account.")
-            return
-        except Exception as e:
-            log.error("Report generation/sending failed for '%s': %s", art.get("title_fa", ""), e)
 
     log.info("Run complete.")
 
