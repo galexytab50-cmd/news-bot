@@ -14,11 +14,13 @@ import re
 import sys
 import json
 import hashlib
+import difflib
 import logging
 import time
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse, parse_qsl, urlencode
 
 import requests
 
@@ -45,14 +47,14 @@ DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "")  # e.g. @IrafMonitoring
 
-SEEN_IDS_FILE = Path("seen_ids.txt")
-SEEN_HISTORY_FILE = Path("seen_history.jsonl")
-CROSS_SOURCE_OVERLAP_THRESHOLD = 0.5  # title+summary overlap vs recent history
+PUBLISHED_STORE_FILE = Path("published_articles.jsonl")  # single source of truth
+TITLE_SIMILARITY_THRESHOLD = float(os.environ.get("TITLE_SIMILARITY_THRESHOLD", "0.90"))  # near-certain textual match -> auto-block
+SEMANTIC_CANDIDATE_THRESHOLD = 0.45  # min title similarity to bother asking DeepSeek to confirm/deny
+SEMANTIC_TIME_WINDOW_DAYS = 14  # how far back to look for fuzzy/semantic candidates
 REPORTS_DIR = Path("reports")
 REPORTS_DIR.mkdir(exist_ok=True)
 
 MAX_ARTICLES_PER_RUN = int(os.environ.get("MAX_ARTICLES_PER_RUN", "0"))  # 0 = no limit
-KEYWORD_OVERLAP_THRESHOLD = 0.5
 
 CATEGORY_MAP = {
     "سیاسی": "#سیاسی 🏛️",
@@ -217,88 +219,132 @@ def sanitize_text(text: str) -> str:
     return text.strip()
 
 
-def normalize_title(title: str) -> str:
-    title = sanitize_text(title).lower()
-    title = re.sub(r"[^\w\s]", "", title, flags=re.UNICODE)
-    return title.strip()
+def normalize_persian_text(text: str) -> str:
+    """Deep normalization for fuzzy comparison: unifies Arabic/Persian
+    look-alike letters, strips diacritics, URLs, emoji, hashtags,
+    punctuation, half-spaces, and collapses whitespace."""
+    if not text:
+        return ""
+    text = unicodedata.normalize("NFKC", text)
+    text = (text
+            .replace("ي", "ی").replace("ك", "ک")
+            .replace("ة", "ه").replace("ۀ", "ه")
+            .replace("أ", "ا").replace("إ", "ا").replace("آ", "ا"))
+    # Strip Arabic diacritics/tashkeel
+    text = re.sub(r"[\u064B-\u065F\u0670\u06D6-\u06ED]", "", text)
+    # Strip URLs
+    text = re.sub(r"https?://\S+", " ", text)
+    # Strip emoji (broad ranges)
+    text = re.sub(
+        r"[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF\U00002190-\U000021FF\U00002B00-\U00002BFF]",
+        " ", text,
+    )
+    text = text.replace("#", " ").replace("\u200c", " ")  # hashtags, half-space (ZWNJ)
+    text = re.sub(r"[^\w\s]", " ", text, flags=re.UNICODE)  # punctuation
+    text = re.sub(r"\d+", " ", text)  # numbers often differ (dates/counts) without changing the story
+    text = re.sub(r"\s+", " ", text).strip().lower()
+    return text
 
 
-def title_hash(title: str) -> str:
-    return hashlib.md5(normalize_title(title).encode("utf-8")).hexdigest()
+def normalize_url(url: str) -> str:
+    """Strips tracking params (utm_*, fbclid, gclid, ...), normalizes host
+    and trailing slash, so the same article linked with different tracking
+    params is recognized as the same URL."""
+    if not url:
+        return ""
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return url.strip().rstrip("/")
+
+    netloc = parsed.netloc.lower()
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+    path = parsed.path.rstrip("/")
+
+    blocked_params = {
+        "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
+        "fbclid", "gclid", "igshid", "ref", "ref_src",
+    }
+    query_pairs = sorted(
+        (k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+        if k.lower() not in blocked_params
+    )
+    query = urlencode(query_pairs)
+
+    normalized = f"https://{netloc}{path}"
+    if query:
+        normalized += f"?{query}"
+    return normalized
 
 
-def normalize_words(text: str) -> set:
-    text = sanitize_text(text).lower()
-    text = re.sub(r"[^\w\s]", "", text, flags=re.UNICODE)
-    return set(text.split())
+def article_hash(title: str, content: str, source: str) -> str:
+    """Layer 2 -- deterministic SHA-256 fingerprint of the normalized
+    title+content+source. Catches exact/near-exact re-publications even if
+    URL/GUID differ."""
+    norm = (
+        normalize_persian_text(title) + "|" +
+        normalize_persian_text(content)[:600] + "|" +
+        normalize_persian_text(source)
+    )
+    return hashlib.sha256(norm.encode("utf-8")).hexdigest()
 
 
-def keyword_overlap(a: str, b: str) -> float:
-    words_a = set(normalize_title(a).split())
-    words_b = set(normalize_title(b).split())
-    if not words_a or not words_b:
+def title_similarity(a: str, b: str) -> float:
+    """Layer 3 -- fuzzy title similarity (0..1) after deep normalization.
+    Catches reworded/reordered/punctuation-different headlines about the
+    same story."""
+    na, nb = normalize_persian_text(a), normalize_persian_text(b)
+    if not na or not nb:
         return 0.0
-    intersection = words_a & words_b
-    smaller = min(len(words_a), len(words_b))
-    return len(intersection) / smaller if smaller else 0.0
+    return difflib.SequenceMatcher(None, na, nb).ratio()
 
 
-def combined_overlap(article_a: dict, article_b_words: set) -> float:
-    """Compares title+summary keywords, not just the title -- this catches
-    the same story rewritten with a different headline by another source."""
-    text_a = article_a["title"] + " " + article_a.get("summary", "")[:400]
-    words_a = normalize_words(text_a)
-    if not words_a or not article_b_words:
-        return 0.0
-    intersection = words_a & article_b_words
-    smaller = min(len(words_a), len(article_b_words))
-    return len(intersection) / smaller if smaller else 0.0
+def sanitize_text(text: str) -> str:
+    """Remove control characters and normalize unicode so text is safe to
+    send to the DeepSeek API as JSON. This is the core fix for the 400
+    Bad Request errors that occurred with raw Persian article content."""
+    if not text:
+        return ""
+    text = unicodedata.normalize("NFC", text)
+    text = "".join(
+        ch for ch in text
+        if ch in ("\n", "\t") or unicodedata.category(ch)[0] != "C"
+    )
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
-def load_seen_ids() -> set:
-    if SEEN_IDS_FILE.exists():
-        return set(SEEN_IDS_FILE.read_text(encoding="utf-8").splitlines())
-    return set()
+# --------------------------------------------------------------------------
+# Persistent duplicate store (single source of truth -- survives across
+# GitHub Actions runs via git commit; see pipeline.yml)
+# --------------------------------------------------------------------------
 
-
-def save_seen_ids(seen: set):
-    SEEN_IDS_FILE.write_text("\n".join(sorted(seen)), encoding="utf-8")
-
-
-def load_seen_history(max_age_hours: int = 72) -> list:
-    """Loads recent (title+summary keyword-set) fingerprints used to catch
-    the same story republished by a different source with a different
-    headline. Pruned to a rolling time window so the file doesn't grow
-    forever."""
-    if not SEEN_HISTORY_FILE.exists():
+def load_published_store() -> list:
+    """Loads the FULL history (no time limit) -- required for URL/GUID/Hash
+    checks, which must never expire per spec."""
+    if not PUBLISHED_STORE_FILE.exists():
         return []
-    cutoff = datetime.now(timezone.utc).timestamp() - (max_age_hours * 3600)
-    history = []
-    for line in SEEN_HISTORY_FILE.read_text(encoding="utf-8").splitlines():
+    records = []
+    for line in PUBLISHED_STORE_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
         try:
-            entry = json.loads(line)
+            records.append(json.loads(line))
         except json.JSONDecodeError:
             continue
-        if entry.get("ts", 0) >= cutoff:
-            entry["words"] = set(entry.get("words", []))
-            history.append(entry)
-    return history
+    return records
 
 
-def save_seen_history(history: list, max_entries: int = 1500):
-    trimmed = history[-max_entries:]
-    lines = []
-    for entry in trimmed:
-        lines.append(json.dumps({
-            "ts": entry["ts"],
-            "words": sorted(entry["words"]),
-        }, ensure_ascii=False))
-    SEEN_HISTORY_FILE.write_text("\n".join(lines), encoding="utf-8")
+def append_published_record(record: dict):
+    """Appends immediately (not batched) so that even if the process
+    crashes on the NEXT article, already-published articles are not lost
+    and won't be reposted on the next run."""
+    with open(PUBLISHED_STORE_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-
-# --------------------------------------------------------------------------
-# Inoreader
-# --------------------------------------------------------------------------
 
 def inoreader_login() -> str:
     """Direct credential auth (OAuth was tried previously and abandoned)."""
@@ -356,7 +402,7 @@ def fetch_articles(auth_token: str, limit: int = 50, max_age_hours: int = 48) ->
             continue
 
         articles.append({
-            "id": item.get("id", title_hash(title)),
+            "id": item.get("id") or hashlib.sha256(normalize_persian_text(title).encode("utf-8")).hexdigest(),
             "title": title,
             "summary": summary[:2000],  # cap length defensively
             "link": link,
@@ -370,66 +416,163 @@ def fetch_articles(auth_token: str, limit: int = 50, max_age_hours: int = 48) ->
 
 
 # --------------------------------------------------------------------------
-# Duplicate detection
+# Duplicate detection (multi-layer, persistent-store-backed)
 # --------------------------------------------------------------------------
+#
+#   Layer 1: normalized URL / GUID exact match      (no time limit)
+#   Layer 2: SHA-256 hash of normalized article      (no time limit)
+#   Layer 3: fuzzy title similarity (difflib)         (last 14 days)
+#   Layer 4: DeepSeek semantic check (advisory only,  (last 14 days,
+#            never the sole authority)                 only for L3 candidates)
+#
+# The persistent JSONL store (published_articles.jsonl) is the single
+# source of truth. DeepSeek is consulted but never trusted alone -- if it
+# times out, errors, or returns bad JSON, the article is NOT auto-blocked
+# by layer 4 (fail-open on layer 4 only); layers 1-3 remain fully in force
+# regardless of DeepSeek's availability.
 
-def deduplicate(articles: list, seen: set, history: list) -> tuple:
-    """Returns (fresh_articles, updated_history). Checks each incoming
-    article against:
-    1) exact title hash seen before (fast path)
-    2) other articles already accepted in this same run (same-source or
-       different-source republishing within one fetch)
-    3) the persisted history of recent articles' title+summary keywords
-       (catches the same story from a different source, published in an
-       earlier run, with a different headline)
-    """
-    fresh = []
-    accepted_word_sets_this_run = []
+def find_similarity_candidates(article: dict, windowed_store: list) -> list:
+    """Returns [(similarity, record), ...] sorted descending, for records
+    within the recent time window whose title is at least loosely similar."""
+    scored = []
+    for rec in windowed_store:
+        sim = title_similarity(article["title"], rec.get("title", ""))
+        if sim >= SEMANTIC_CANDIDATE_THRESHOLD:
+            scored.append((sim, rec))
+    scored.sort(key=lambda x: -x[0])
+    return scored[:5]
 
-    for art in articles:
-        h = title_hash(art["title"])
-        if h in seen:
-            continue
 
-        combined_text = art["title"] + " " + art.get("summary", "")[:400]
-        art_words = normalize_words(combined_text)
+def semantic_duplicate_check(article: dict, candidates: list) -> dict:
+    """Layer 4. Asks DeepSeek whether the new article covers the same
+    real-world event as one of the candidate articles. Structured JSON
+    output only; any failure fails OPEN (is_duplicate=False) since layers
+    1-3 are the hard guarantees, not this layer."""
+    if not candidates:
+        return {"is_duplicate": False}
 
-        is_dup = False
+    prev_list = "\n".join(
+        f"- ID: {rec.get('id')} | عنوان: {rec.get('title', '')}"
+        for _, rec in candidates
+    )
+    system_prompt = """
+شما یک سیستم تشخیص خبر تکراری هستید. فقط بررسی کنید که آیا خبر جدید دقیقاً
+همان رویداد یکی از خبرهای قبلی است یا نه.
 
-        # Compare against articles already accepted earlier in this run
-        for prev_words in accepted_word_sets_this_run:
-            if not art_words or not prev_words:
-                continue
-            intersection = art_words & prev_words
-            smaller = min(len(art_words), len(prev_words))
-            if smaller and (len(intersection) / smaller) >= KEYWORD_OVERLAP_THRESHOLD:
-                is_dup = True
-                break
+قوانین:
+1. اگر همان رویداد است ولی با عنوان متفاوت یا بازنویسی متفاوت بیان شده، Duplicate است.
+2. اگر فقط موضوع کلی مشابه است ولی رویداد، شخص، تاریخ یا مکان متفاوت است، Duplicate نیست.
+3. صرفاً به‌خاطر شباهت موضوعی Duplicate اعلام نکنید.
+4. اگر مطمئن نیستید، Duplicate اعلام نکنید (false بگذارید).
+5. فقط یک شیء JSON معتبر برگردانید، بدون هیچ متن یا Markdown اضافه.
+"""
+    user_prompt = f"""
+NEW ARTICLE:
+Title: {article['title']}
+Content: {article.get('summary', '')[:500]}
 
-        # Compare against persisted history from previous runs/sources
-        if not is_dup:
-            for entry in history:
-                hist_words = entry.get("words", set())
-                if not art_words or not hist_words:
-                    continue
-                intersection = art_words & hist_words
-                smaller = min(len(art_words), len(hist_words))
-                if smaller and (len(intersection) / smaller) >= CROSS_SOURCE_OVERLAP_THRESHOLD:
-                    is_dup = True
-                    break
+PREVIOUS ARTICLES:
+{prev_list}
 
-        # Record this article's fingerprint in history regardless of
-        # relevance later, so future similar articles (any source) are caught
-        history.append({"ts": datetime.now(timezone.utc).timestamp(), "words": art_words})
+خروجی دقیقاً به این شکل:
+{{"is_duplicate": true/false, "similarity": 0.00, "matched_article_id": "ID یا خالی", "reason": "توضیح کوتاه"}}
+"""
+    try:
+        raw = call_deepseek(system_prompt, user_prompt, max_tokens=300)
+    except DeepSeekBalanceError:
+        raise
+    except Exception as e:
+        log.warning("Semantic duplicate check failed (%s); layers 1-3 remain authoritative, treating as not-duplicate for layer 4", e)
+        return {"is_duplicate": False}
 
-        if is_dup:
-            continue
+    cleaned = re.sub(r"^```(json)?|```$", "", raw.strip(), flags=re.MULTILINE).strip()
+    match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+    if match:
+        cleaned = match.group(0)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        log.warning("Semantic duplicate check returned invalid JSON; treating as not-duplicate for layer 4")
+        return {"is_duplicate": False}
 
-        art["_hash"] = h
-        fresh.append(art)
-        accepted_word_sets_this_run.append(art_words)
 
-    return fresh, history
+def check_duplicate(article: dict, url_set: set, guid_set: set, hash_set: set, windowed_store: list) -> tuple:
+    """Runs all 4 layers in order (cheapest/most certain first) and returns
+    (is_duplicate: bool, log_entry: dict) for full traceability."""
+    norm_url = normalize_url(article.get("link", ""))
+    guid = article.get("id", "")
+    h = article_hash(article["title"], article.get("summary", ""), article.get("source", ""))
+    article["_normalized_url"] = norm_url
+    article["_guid"] = guid
+    article["_hash"] = h
+
+    log_entry = {
+        "article_id": guid,
+        "source": article.get("source", ""),
+        "title": article["title"],
+        "url": article.get("link", ""),
+        "url_duplicate": bool(norm_url and norm_url in url_set),
+        "guid_duplicate": bool(guid and guid in guid_set),
+        "hash_duplicate": h in hash_set,
+    }
+
+    if log_entry["url_duplicate"] or log_entry["guid_duplicate"] or log_entry["hash_duplicate"]:
+        log_entry["title_similarity"] = None
+        log_entry["semantic_duplicate"] = None
+        log_entry["final_decision"] = "SKIPPED_DUPLICATE"
+        log.info("DUPLICATE[url/guid/hash] %s", json.dumps(log_entry, ensure_ascii=False))
+        return True, log_entry
+
+    candidates = find_similarity_candidates(article, windowed_store)
+    top_sim = candidates[0][0] if candidates else 0.0
+    log_entry["title_similarity"] = round(top_sim, 3)
+
+    if top_sim >= TITLE_SIMILARITY_THRESHOLD:
+        log_entry["matched_article_id"] = candidates[0][1].get("id")
+        log_entry["semantic_duplicate"] = None
+        log_entry["final_decision"] = "SKIPPED_DUPLICATE"
+        log.info("DUPLICATE[title_similarity=%.2f] %s", top_sim, json.dumps(log_entry, ensure_ascii=False))
+        return True, log_entry
+
+    semantic = semantic_duplicate_check(article, candidates)
+    log_entry["semantic_duplicate"] = semantic.get("is_duplicate", False)
+    log_entry["deepseek_decision"] = semantic
+
+    if semantic.get("is_duplicate"):
+        log_entry["matched_article_id"] = semantic.get("matched_article_id")
+        log_entry["final_decision"] = "SKIPPED_DUPLICATE"
+        log.info("DUPLICATE[semantic] %s", json.dumps(log_entry, ensure_ascii=False))
+        return True, log_entry
+
+    log_entry["final_decision"] = "APPROVED"
+    log.info("NOT_DUPLICATE %s", json.dumps(log_entry, ensure_ascii=False))
+    return False, log_entry
+
+
+def final_duplicate_gate(article: dict) -> bool:
+    """The mandatory last check, right before Telegram send. Reloads the
+    store fresh from disk (defends against another process having written
+    to it since the run started) and re-checks the hard layers (1/2/3,
+    skipping the slower semantic layer since layers 1-3 already ran)."""
+    store = load_published_store()
+    url_set = {r["normalized_url"] for r in store if r.get("normalized_url")}
+    guid_set = {r["guid"] for r in store if r.get("guid")}
+    hash_set = {r["article_hash"] for r in store if r.get("article_hash")}
+
+    norm_url = article.get("_normalized_url", "")
+    guid = article.get("_guid", "")
+    h = article.get("_hash", "")
+
+    if (norm_url and norm_url in url_set) or (guid and guid in guid_set) or (h and h in hash_set):
+        return True  # is duplicate -> block
+
+    cutoff = datetime.now(timezone.utc).timestamp() - (SEMANTIC_TIME_WINDOW_DAYS * 86400)
+    windowed = [r for r in store if r.get("created_at_ts", 0) >= cutoff]
+    for rec in windowed:
+        if title_similarity(article["title"], rec.get("title", "")) >= TITLE_SIMILARITY_THRESHOLD:
+            return True  # near-certain textual match -> block without needing another semantic call
+
+    return False
 
 
 # --------------------------------------------------------------------------
@@ -671,48 +814,106 @@ def main():
     articles = fetch_articles(auth_token, limit=200)
     log.info("Fetched %d articles", len(articles))
 
-    seen = load_seen_ids()
-    history = load_seen_history()
-    fresh_articles, history = deduplicate(articles, seen, history)
-    save_seen_history(history)
-    log.info("%d articles remain after de-duplication", len(fresh_articles))
+    # Load the persistent store once. url_set/guid_set/hash_set are NEVER
+    # time-limited (per spec). windowed_store is used only for the fuzzy
+    # title / semantic layers, bounded to a recent window for speed.
+    store = load_published_store()
+    url_set = {r["normalized_url"] for r in store if r.get("normalized_url")}
+    guid_set = {r["guid"] for r in store if r.get("guid")}
+    hash_set = {r["article_hash"] for r in store if r.get("article_hash")}
+    cutoff = datetime.now(timezone.utc).timestamp() - (SEMANTIC_TIME_WINDOW_DAYS * 86400)
+    windowed_store = [r for r in store if r.get("created_at_ts", 0) >= cutoff]
+    log.info("Loaded %d published records (%d within %dd window) for duplicate checks",
+              len(store), len(windowed_store), SEMANTIC_TIME_WINDOW_DAYS)
 
-    analyzed = []
-    for art in fresh_articles:  # no cap: analyze every fresh article this run
+    published_count = 0
+    skipped_duplicate_count = 0
+    to_publish = []  # (result, art) pairs approved for sending, before ordering
+
+    for art in articles:
+        try:
+            is_dup, _log_entry = check_duplicate(art, url_set, guid_set, hash_set, windowed_store)
+        except DeepSeekBalanceError:
+            log.error("Stopping run: DeepSeek balance is depleted. Please top up your DeepSeek account.")
+            return
+        except Exception as e:
+            log.error("Duplicate check failed for '%s': %s -- skipping to be safe", art["title"], e)
+            continue
+
+        if is_dup:
+            skipped_duplicate_count += 1
+            continue
+
+        # Register this article's fingerprint immediately (in-memory only,
+        # not yet persisted) so that if another source in THIS SAME run
+        # covers the same story, it gets caught too -- regardless of
+        # whether this particular instance turns out to be relevant.
+        if art.get("_normalized_url"):
+            url_set.add(art["_normalized_url"])
+        if art.get("_guid"):
+            guid_set.add(art["_guid"])
+        if art.get("_hash"):
+            hash_set.add(art["_hash"])
+        windowed_store.append({
+            "id": art.get("_guid", ""), "title": art["title"],
+            "created_at_ts": datetime.now(timezone.utc).timestamp(),
+        })
+
         try:
             result = analyze_article(art)
         except DeepSeekBalanceError:
             log.error("Stopping run: DeepSeek balance is depleted. Please top up your DeepSeek account.")
-            save_seen_ids(seen)
             return
         except Exception as e:
             log.error("Failed to analyze article '%s': %s", art["title"], e)
             continue
 
-        seen.add(art["_hash"])  # mark as seen regardless of relevance, to avoid re-processing
+        if not result.get("relevant"):
+            continue
 
-        if result.get("relevant"):
-            result["link"] = art["link"]
-            analyzed.append(result)
+        result["link"] = art["link"]
+        to_publish.append((result, art))
 
-    save_seen_ids(seen)
+    log.info("%d articles approved for publishing (after all duplicate layers)", len(to_publish))
 
-    if not analyzed:
-        log.info("No relevant articles this run. Exiting.")
-        return
+    to_publish.sort(key=lambda pair: pair[0].get("priority", 5))
 
-    log.info("%d relevant articles analyzed. Sending to Telegram...", len(analyzed))
+    for result, art in to_publish:
+        # FINAL_DUPLICATE_GATE -- mandatory last check right before Telegram,
+        # reloaded fresh from disk as a defense against concurrent processes.
+        if final_duplicate_gate(art):
+            log.info("SKIPPED_DUPLICATE (final gate) '%s'", art["title"])
+            skipped_duplicate_count += 1
+            continue
 
-    sorted_articles = sorted(analyzed, key=lambda a: a.get("priority", 5))
-
-    for art in sorted_articles:
         try:
-            send_telegram_message(format_article_message(art))
+            send_telegram_message(format_article_message(result))
             time.sleep(1.5)  # stay under Telegram's rate limit
         except Exception as e:
-            log.error("Failed to send article message: %s", e)
+            log.error("Telegram send FAILED for '%s': %s -- NOT recording as published, will retry next run", art["title"], e)
+            continue  # do NOT append to the store -> safe to retry next run
 
-    log.info("Run complete.")
+        # PUBLISH succeeded -> immediately persist (source of truth)
+        now_ts = datetime.now(timezone.utc).timestamp()
+        record = {
+            "id": art.get("_guid", ""),
+            "source": art.get("source", ""),
+            "original_url": art.get("link", ""),
+            "normalized_url": art.get("_normalized_url", ""),
+            "guid": art.get("_guid", ""),
+            "title": art.get("title", ""),
+            "normalized_title": normalize_persian_text(art.get("title", "")),
+            "article_hash": art.get("_hash", ""),
+            "published_at": datetime.now(timezone.utc).isoformat(),
+            "telegram_channel": TELEGRAM_CHANNEL_ID,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at_ts": now_ts,
+            "status": "PUBLISHED",
+        }
+        append_published_record(record)
+        published_count += 1
+
+    log.info("Run complete. Published: %d, Skipped as duplicate: %d", published_count, skipped_duplicate_count)
 
 
 if __name__ == "__main__":
