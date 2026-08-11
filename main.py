@@ -46,6 +46,8 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "")  # e.g. @IrafMonitoring
 
 SEEN_IDS_FILE = Path("seen_ids.txt")
+SEEN_HISTORY_FILE = Path("seen_history.jsonl")
+CROSS_SOURCE_OVERLAP_THRESHOLD = 0.5  # title+summary overlap vs recent history
 REPORTS_DIR = Path("reports")
 REPORTS_DIR.mkdir(exist_ok=True)
 
@@ -225,6 +227,12 @@ def title_hash(title: str) -> str:
     return hashlib.md5(normalize_title(title).encode("utf-8")).hexdigest()
 
 
+def normalize_words(text: str) -> set:
+    text = sanitize_text(text).lower()
+    text = re.sub(r"[^\w\s]", "", text, flags=re.UNICODE)
+    return set(text.split())
+
+
 def keyword_overlap(a: str, b: str) -> float:
     words_a = set(normalize_title(a).split())
     words_b = set(normalize_title(b).split())
@@ -232,6 +240,18 @@ def keyword_overlap(a: str, b: str) -> float:
         return 0.0
     intersection = words_a & words_b
     smaller = min(len(words_a), len(words_b))
+    return len(intersection) / smaller if smaller else 0.0
+
+
+def combined_overlap(article_a: dict, article_b_words: set) -> float:
+    """Compares title+summary keywords, not just the title -- this catches
+    the same story rewritten with a different headline by another source."""
+    text_a = article_a["title"] + " " + article_a.get("summary", "")[:400]
+    words_a = normalize_words(text_a)
+    if not words_a or not article_b_words:
+        return 0.0
+    intersection = words_a & article_b_words
+    smaller = min(len(words_a), len(article_b_words))
     return len(intersection) / smaller if smaller else 0.0
 
 
@@ -243,6 +263,37 @@ def load_seen_ids() -> set:
 
 def save_seen_ids(seen: set):
     SEEN_IDS_FILE.write_text("\n".join(sorted(seen)), encoding="utf-8")
+
+
+def load_seen_history(max_age_hours: int = 72) -> list:
+    """Loads recent (title+summary keyword-set) fingerprints used to catch
+    the same story republished by a different source with a different
+    headline. Pruned to a rolling time window so the file doesn't grow
+    forever."""
+    if not SEEN_HISTORY_FILE.exists():
+        return []
+    cutoff = datetime.now(timezone.utc).timestamp() - (max_age_hours * 3600)
+    history = []
+    for line in SEEN_HISTORY_FILE.read_text(encoding="utf-8").splitlines():
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if entry.get("ts", 0) >= cutoff:
+            entry["words"] = set(entry.get("words", []))
+            history.append(entry)
+    return history
+
+
+def save_seen_history(history: list, max_entries: int = 1500):
+    trimmed = history[-max_entries:]
+    lines = []
+    for entry in trimmed:
+        lines.append(json.dumps({
+            "ts": entry["ts"],
+            "words": sorted(entry["words"]),
+        }, ensure_ascii=False))
+    SEEN_HISTORY_FILE.write_text("\n".join(lines), encoding="utf-8")
 
 
 # --------------------------------------------------------------------------
@@ -322,28 +373,63 @@ def fetch_articles(auth_token: str, limit: int = 50, max_age_hours: int = 48) ->
 # Duplicate detection
 # --------------------------------------------------------------------------
 
-def deduplicate(articles: list, seen: set) -> list:
+def deduplicate(articles: list, seen: set, history: list) -> tuple:
+    """Returns (fresh_articles, updated_history). Checks each incoming
+    article against:
+    1) exact title hash seen before (fast path)
+    2) other articles already accepted in this same run (same-source or
+       different-source republishing within one fetch)
+    3) the persisted history of recent articles' title+summary keywords
+       (catches the same story from a different source, published in an
+       earlier run, with a different headline)
+    """
     fresh = []
-    seen_titles_this_run = []
+    accepted_word_sets_this_run = []
 
     for art in articles:
         h = title_hash(art["title"])
         if h in seen:
             continue
 
+        combined_text = art["title"] + " " + art.get("summary", "")[:400]
+        art_words = normalize_words(combined_text)
+
         is_dup = False
-        for prev_title in seen_titles_this_run:
-            if keyword_overlap(art["title"], prev_title) >= KEYWORD_OVERLAP_THRESHOLD:
+
+        # Compare against articles already accepted earlier in this run
+        for prev_words in accepted_word_sets_this_run:
+            if not art_words or not prev_words:
+                continue
+            intersection = art_words & prev_words
+            smaller = min(len(art_words), len(prev_words))
+            if smaller and (len(intersection) / smaller) >= KEYWORD_OVERLAP_THRESHOLD:
                 is_dup = True
                 break
+
+        # Compare against persisted history from previous runs/sources
+        if not is_dup:
+            for entry in history:
+                hist_words = entry.get("words", set())
+                if not art_words or not hist_words:
+                    continue
+                intersection = art_words & hist_words
+                smaller = min(len(art_words), len(hist_words))
+                if smaller and (len(intersection) / smaller) >= CROSS_SOURCE_OVERLAP_THRESHOLD:
+                    is_dup = True
+                    break
+
+        # Record this article's fingerprint in history regardless of
+        # relevance later, so future similar articles (any source) are caught
+        history.append({"ts": datetime.now(timezone.utc).timestamp(), "words": art_words})
+
         if is_dup:
             continue
 
         art["_hash"] = h
         fresh.append(art)
-        seen_titles_this_run.append(art["title"])
+        accepted_word_sets_this_run.append(art_words)
 
-    return fresh
+    return fresh, history
 
 
 # --------------------------------------------------------------------------
@@ -586,7 +672,9 @@ def main():
     log.info("Fetched %d articles", len(articles))
 
     seen = load_seen_ids()
-    fresh_articles = deduplicate(articles, seen)
+    history = load_seen_history()
+    fresh_articles, history = deduplicate(articles, seen, history)
+    save_seen_history(history)
     log.info("%d articles remain after de-duplication", len(fresh_articles))
 
     analyzed = []
