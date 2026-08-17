@@ -312,3 +312,13 @@ tag:google.com,2005:reader/item/0000000bb1be0c1f
 tag:google.com,2005:reader/item/0000000bb1bf2476
 tag:google.com,2005:reader/item/0000000bb1bf2477
 tag:google.com,2005:reader/item/0000000bb1bf247a
+tag:google.com,2005:reader/item/0000000bb1c47596
+tag:google.com,2005:reader/item/0000000bb1c417f9
+tag:google.com,2005:reader/item/0000000bb1c417fa
+tag:google.com,2005:reader/item/0000000bb1c47597
+tag:google.com,2005:reader/item/0000000bb1c3f904
+tag:google.com,2005:reader/item/0000000bb1c3f905
+tag:google.com,2005:reader/item/0000000bb1c3f906
+tag:google.com,2005:reader/item/0000000bb1c3f907
+tag:google.com,2005:reader/item/0000000bb1c3f908
+tag:google.com,2005:reader/item/0000000bb1c3f909
