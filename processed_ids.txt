@@ -275,3 +275,14 @@ tag:google.com,2005:reader/item/0000000bb1ab739c
 tag:google.com,2005:reader/item/0000000bb1a9e93c
 tag:google.com,2005:reader/item/0000000bb1ab739d
 tag:google.com,2005:reader/item/0000000bb1adee51
+tag:google.com,2005:reader/item/0000000bb1b87735
+tag:google.com,2005:reader/item/0000000bb1b8008e
+tag:google.com,2005:reader/item/0000000bb1b8543b
+tag:google.com,2005:reader/item/0000000bb1b8008f
+tag:google.com,2005:reader/item/0000000bb1b5a761
+tag:google.com,2005:reader/item/0000000bb1b5a762
+tag:google.com,2005:reader/item/0000000bb1b3c41c
+tag:google.com,2005:reader/item/0000000bb1b5a763
+tag:google.com,2005:reader/item/0000000bb1b67f99
+tag:google.com,2005:reader/item/0000000bb1b5a764
+tag:google.com,2005:reader/item/0000000bb1b49ad1
