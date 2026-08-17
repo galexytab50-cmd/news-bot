@@ -48,6 +48,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "")  # e.g. @IrafMonitoring
 
 PUBLISHED_STORE_FILE = Path("published_articles.jsonl")  # single source of truth
+PROCESSED_IDS_FILE = Path("processed_ids.txt")  # every article ever analyzed, relevant or not
 TITLE_SIMILARITY_THRESHOLD = float(os.environ.get("TITLE_SIMILARITY_THRESHOLD", "0.90"))  # near-certain textual match -> auto-block
 SEMANTIC_CANDIDATE_THRESHOLD = 0.45  # min title similarity to bother asking DeepSeek to confirm/deny
 SEMANTIC_TIME_WINDOW_DAYS = 14  # how far back to look for fuzzy/semantic candidates
@@ -344,6 +345,22 @@ def append_published_record(record: dict):
     and won't be reposted on the next run."""
     with open(PUBLISHED_STORE_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def load_processed_ids() -> set:
+    """Every article ID (guid+hash) that has EVER been sent to DeepSeek for
+    analysis, whether it turned out relevant or not. Without this, an
+    irrelevant article that keeps reappearing in the Inoreader feed gets
+    re-analyzed (and re-billed) on every single run until it ages out of
+    the freshness window -- this was silently burning DeepSeek tokens."""
+    if not PROCESSED_IDS_FILE.exists():
+        return set()
+    return set(PROCESSED_IDS_FILE.read_text(encoding="utf-8").splitlines())
+
+
+def append_processed_id(article_key: str):
+    with open(PROCESSED_IDS_FILE, "a", encoding="utf-8") as f:
+        f.write(article_key + "\n")
 
 
 def inoreader_login() -> str:
@@ -826,11 +843,20 @@ def main():
     log.info("Loaded %d published records (%d within %dd window) for duplicate checks",
               len(store), len(windowed_store), SEMANTIC_TIME_WINDOW_DAYS)
 
+    processed_ids = load_processed_ids()
+    log.info("Loaded %d previously-processed article IDs (skipped without re-spending tokens)", len(processed_ids))
+
     published_count = 0
     skipped_duplicate_count = 0
+    skipped_already_processed_count = 0
     to_publish = []  # (result, art) pairs approved for sending, before ordering
 
     for art in articles:
+        article_key = art.get("id", "")
+        if article_key and article_key in processed_ids:
+            skipped_already_processed_count += 1
+            continue  # already analyzed in a previous run (relevant or not) -- don't re-spend tokens
+
         try:
             is_dup, _log_entry = check_duplicate(art, url_set, guid_set, hash_set, windowed_store)
         except DeepSeekBalanceError:
@@ -842,6 +868,9 @@ def main():
 
         if is_dup:
             skipped_duplicate_count += 1
+            if article_key:
+                append_processed_id(article_key)
+                processed_ids.add(article_key)
             continue
 
         # Register this article's fingerprint immediately (in-memory only,
@@ -866,7 +895,13 @@ def main():
             return
         except Exception as e:
             log.error("Failed to analyze article '%s': %s", art["title"], e)
-            continue
+            continue  # NOT marked as processed -> will retry next run (transient errors shouldn't be permanent)
+
+        # Mark as processed regardless of relevance -- this is the fix:
+        # an irrelevant article must never be re-analyzed by DeepSeek again.
+        if article_key:
+            append_processed_id(article_key)
+            processed_ids.add(article_key)
 
         if not result.get("relevant"):
             continue
@@ -875,6 +910,7 @@ def main():
         to_publish.append((result, art))
 
     log.info("%d articles approved for publishing (after all duplicate layers)", len(to_publish))
+    log.info("%d articles skipped as already-processed (token savings)", skipped_already_processed_count)
 
     to_publish.sort(key=lambda pair: pair[0].get("priority", 5))
 
