@@ -623,3 +623,17 @@ tag:google.com,2005:reader/item/0000000bb1ff91c1
 tag:google.com,2005:reader/item/0000000bb200d4a9
 tag:google.com,2005:reader/item/0000000bb200d4b1
 tag:google.com,2005:reader/item/0000000bb1ff61f3
+tag:google.com,2005:reader/item/0000000bb206564b
+tag:google.com,2005:reader/item/0000000bb206564e
+tag:google.com,2005:reader/item/0000000bb2065654
+tag:google.com,2005:reader/item/0000000bb2065655
+tag:google.com,2005:reader/item/0000000bb204df75
+tag:google.com,2005:reader/item/0000000bb202375c
+tag:google.com,2005:reader/item/0000000bb2027ff8
+tag:google.com,2005:reader/item/0000000bb20209d0
+tag:google.com,2005:reader/item/0000000bb20209d3
+tag:google.com,2005:reader/item/0000000bb204df76
+tag:google.com,2005:reader/item/0000000bb2027ffa
+tag:google.com,2005:reader/item/0000000bb2039a20
+tag:google.com,2005:reader/item/0000000bb20206b6
+tag:google.com,2005:reader/item/0000000bb202d3ce
