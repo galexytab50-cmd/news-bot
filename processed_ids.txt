@@ -570,3 +570,12 @@ tag:google.com,2005:reader/item/0000000bb1f7494f
 tag:google.com,2005:reader/item/0000000bb1f74950
 tag:google.com,2005:reader/item/0000000bb1f4cad9
 tag:google.com,2005:reader/item/0000000bb1f3d3f6
+tag:google.com,2005:reader/item/0000000bb1fa9b7c
+tag:google.com,2005:reader/item/0000000bb1fa9b7e
+tag:google.com,2005:reader/item/0000000bb1fa324f
+tag:google.com,2005:reader/item/0000000bb1fa3256
+tag:google.com,2005:reader/item/0000000bb1fa325c
+tag:google.com,2005:reader/item/0000000bb1fb500e
+tag:google.com,2005:reader/item/0000000bb1fa0dc3
+tag:google.com,2005:reader/item/0000000bb1fb4d46
+tag:google.com,2005:reader/item/0000000bb1f9c740
