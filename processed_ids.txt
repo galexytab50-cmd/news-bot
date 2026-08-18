@@ -337,3 +337,5 @@ tag:google.com,2005:reader/item/0000000bb1ca3214
 tag:google.com,2005:reader/item/0000000bb1c943e4
 tag:google.com,2005:reader/item/0000000bb1ca3217
 tag:google.com,2005:reader/item/0000000bb1ca3219
+tag:google.com,2005:reader/item/0000000bb1cc10ba
+tag:google.com,2005:reader/item/0000000bb1cbbd66
