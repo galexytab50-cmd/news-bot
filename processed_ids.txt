@@ -1322,3 +1322,7 @@ tag:google.com,2005:reader/item/0000000bb265eaab
 tag:google.com,2005:reader/item/0000000bb26624c9
 tag:google.com,2005:reader/item/0000000bb26624ca
 tag:google.com,2005:reader/item/0000000bb26624cb
+tag:google.com,2005:reader/item/0000000bb26a9b33
+tag:google.com,2005:reader/item/0000000bb26a9b36
+tag:google.com,2005:reader/item/0000000bb26a9b39
+tag:google.com,2005:reader/item/0000000bb26a9b3a
