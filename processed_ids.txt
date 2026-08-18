@@ -799,3 +799,7 @@ tag:google.com,2005:reader/item/0000000bb21a9f0f
 tag:google.com,2005:reader/item/0000000bb21978d0
 tag:google.com,2005:reader/item/0000000bb21966c3
 tag:google.com,2005:reader/item/0000000bb21a2f2e
+tag:google.com,2005:reader/item/0000000bb21c664e
+tag:google.com,2005:reader/item/0000000bb21c4f32
+tag:google.com,2005:reader/item/0000000bb21db212
+tag:google.com,2005:reader/item/0000000bb21c5978
