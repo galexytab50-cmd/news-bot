@@ -62,29 +62,33 @@ CATEGORY_MAP = {
     "اقتصادی": "#اقتصادی 💰",
     "فرهنگی": "#فرهنگی 🎭",
     "مهاجرین": "#مهاجرین 🧳",
+    "اجتماعی": "#اجتماعی 🧑‍🤝‍🧑",
     "ورزشی": "#ورزشی ⚽",
 }
 
-# Deterministic geographic priority tiers (do NOT let the model decide this
-# freely -- it was mixing priorities inconsistently). Tier 1 = highest.
-GEO_PRIORITY_TIERS = {
-    1: {"افغانستان"},
-    2: {"ایران"},
-    3: {"پاکستان", "هند", "چین"},
-    4: {
-        "تاجیکستان", "ازبکستان", "ترکمنستان", "قزاقستان", "قرقیزستان",
-        "آسیای مرکزی",
-    },
+# Deterministic priority tiers -- combines geography AND topic relevance,
+# never left to the model's free judgement (that was mixing/forcing
+# irrelevant countries into unrelated stories, e.g. sports).
+#
+#   Tier 1: افغانستان -- ANY topic (سیاسی/فرهنگی/مهاجرین/اجتماعی/اقتصادی/ورزشی)
+#   Tier 2: ایران -- ONLY IF: مرتبط با افغانستان, یا سیاست خارجی ایران,
+#           یا روابط ایران-آمریکا/اسرائیل (gated by topic_qualifies)
+#   Tier 3: پاکستان/هند -- ONLY IF: موضوعات سیاسی این دو کشور یا مرتبط با
+#           افغانستان (gated by topic_qualifies)
+#   Tier 4: کشورهای آسیای مرکزی -- هر موضوعی
+AFGHANISTAN_COUNTRIES = {"افغانستان"}
+IRAN_COUNTRIES = {"ایران"}
+PK_IN_COUNTRIES = {"پاکستان", "هند"}
+CENTRAL_ASIA_COUNTRIES = {
+    "تاجیکستان", "ازبکستان", "ترکمنستان", "قزاقستان", "قرقیزستان", "آسیای مرکزی",
 }
-SPORTS_PRIORITY = 5  # ورزشی همیشه اولویت ۵، مستقل از کشور
-DEFAULT_PRIORITY = 3  # fallback when no recognized country is present
+DEFAULT_PRIORITY = 5  # no recognized priority country, or topic didn't qualify
 
 FLAG_MAP = {
     "افغانستان": "🇦🇫",
     "ایران": "🇮🇷",
     "پاکستان": "🇵🇰",
     "هند": "🇮🇳",
-    "چین": "🇨🇳",
     "تاجیکستان": "🇹🇯",
     "ازبکستان": "🇺🇿",
     "ترکمنستان": "🇹🇲",
@@ -99,19 +103,23 @@ def flags_for_countries(countries: list) -> list:
     return [FLAG_MAP[c] for c in (countries or []) if c in FLAG_MAP]
 
 
-def compute_priority(category: str, countries: list) -> int:
-    """Determines priority deterministically from the geographic rule,
-    instead of trusting the model's own free-form priority number."""
-    if category == "ورزشی":
-        return SPORTS_PRIORITY
+def compute_priority(countries: list, topic_qualifies: bool) -> int:
+    """Determines priority deterministically. `topic_qualifies` comes from
+    the model's judgement of whether an Iran/Pakistan/India story meets the
+    narrower topical criteria (see IRAF_TOPIC_QUALIFICATION_RULES) -- but
+    the COUNTRY tier itself, and Afghanistan's unconditional top priority,
+    are always decided in code, never by the model."""
+    countries = set(countries or [])
 
-    best = None
-    for country in (countries or []):
-        for tier, members in GEO_PRIORITY_TIERS.items():
-            if country in members:
-                if best is None or tier < best:
-                    best = tier
-    return best if best is not None else DEFAULT_PRIORITY
+    if countries & AFGHANISTAN_COUNTRIES:
+        return 1
+    if countries & IRAN_COUNTRIES and topic_qualifies:
+        return 2
+    if countries & PK_IN_COUNTRIES and topic_qualifies:
+        return 3
+    if countries & CENTRAL_ASIA_COUNTRIES:
+        return 4
+    return DEFAULT_PRIORITY
 
 EDITORIAL_RULES = """
 قوانین ویرایشی (باید دقیقاً رعایت شوند):
@@ -195,6 +203,33 @@ IRAF_TERMINOLOGY_RULES = """
 - «طالبان» → «حکومت سرپرست افغانستان»
 - «مجتبی خامنه‌ای» یا هر اشاره به رهبر جمهوری اسلامی ایران → «مقام معظم رهبری» یا «رهبر عالی‌قدر جمهوری اسلامی ایران»
 - «رژیم جمهوری اسلامی» → «نظام جمهوری اسلامی ایران»
+"""
+
+# Determines whether an Iran/Pakistan/India story qualifies for the higher
+# priority tier -- Afghanistan itself is ALWAYS priority 1 regardless of
+# topic, so this only matters when "افغانستان" is NOT among the countries.
+IRAF_TOPIC_QUALIFICATION_RULES = """
+قوانین تعیین "topic_qualifies" (فقط وقتی افغانستان جزو کشورهای خبر نیست):
+
+اگر "ایران" در "countries" باشد، "topic_qualifies" را true بگذارید فقط اگر
+خبر یکی از این‌هاست:
+- موضوعی که مستقیماً به افغانستان مربوط می‌شود (حتی اگر افغانستان را در
+  countries نگذاشتید چون کشور اصلی خبر نبود)
+- اظهارنظر یا سیاست ایران درباره‌ی سیاست خارجی‌اش (نه اخبار داخلی صرف مثل
+  اقتصاد داخلی، حوادث محلی، ورزش داخلی ایران)
+- روابط ایران با آمریکا و/یا اسرائیل (تحریم، مذاکره، تنش، جنگ، دیپلماسی)
+در غیر این صورت (مثلاً خبر داخلی محض ایران بدون ربط به موارد بالا)، false.
+
+اگر "پاکستان" یا "هند" در "countries" باشد، "topic_qualifies" را true
+بگذارید فقط اگر خبر یکی از این‌هاست:
+- موضوعات سیاسی داخلی یا خارجی این دو کشور (انتخابات، دولت، پارلمان،
+  سیاست خارجی، روابط دیپلماتیک)
+- هر خبری که مستقیماً به افغانستان مربوط می‌شود
+در غیر این صورت (مثلاً ورزش، حوادث محلی بی‌ربط، سرگرمی)، false.
+
+برای بقیه‌ی کشورها (تاجیکستان، ازبکستان، ترکمنستان، قزاقستان، قرقیزستان)
+یا وقتی "countries" خالی است، "topic_qualifies" را false بگذارید (اهمیتی
+ندارد -- این کشورها اولویت خودشان را بدون نیاز به این شرط می‌گیرند).
 """
 
 # --------------------------------------------------------------------------
@@ -413,9 +448,13 @@ def fetch_articles(auth_token: str, limit: int = 50, max_age_hours: int = 48) ->
         if not title:
             continue
 
-        # Safety net: skip stale articles even if they somehow weren't
-        # caught by seen_ids (e.g. a bad backlog after downtime).
-        if published and published < cutoff_ts:
+        # Freshness filter. Missing/invalid published dates are treated
+        # CAUTIOUSLY and skipped -- the previous logic let articles with no
+        # published date bypass the filter entirely (a falsy `published`
+        # made the whole condition False), which is exactly how old BBC
+        # Persian-style articles with missing timestamps were slipping
+        # through as if they were fresh.
+        if not published or published < cutoff_ts:
             continue
 
         articles.append({
@@ -656,38 +695,50 @@ def analyze_article(article: dict) -> dict:
 {IRAF_TERMINOLOGY_RULES}
 این اصطلاحات را در "title_fa" و "summary_fa" همیشه و بدون استثنا رعایت کنید.
 
-نکته مهم درباره فیلتر ارتباط (relevant):
-این خبر از فیدی می‌آید که از قبل روی موضوع افغانستان/منطقه تنظیم شده است،
-پس پیش‌فرض این است که خبر مرتبط است ("relevant": true) مگر اینکه یکی از
-موارد زیر باشد:
-- تبلیغات، اسپم، یا کاملاً بی‌ربط به افغانستان/ایران/منطقه (مثلاً ورزش
-  اروپایی بدون ارتباط با افغان‌ها، یا خبر محلی کاملاً بی‌ربط کشور ثالث)
-- محتوای صریحاً ضد ایران
-سخت‌گیری نکنید؛ در موارد مبهم یا خاکستری، "relevant" را true بگذارید و
-اجازه دهید ویرایشگر انسانی بعداً تصمیم نهایی را بگیرد.
+نکته مهم و حیاتی درباره فیلتر ارتباط (relevant):
+ارتباط را فقط بر اساس **محتوای واقعی خبر** تشخیص دهید، نه بر اساس این‌که
+از کدام فید یا منبع آمده است. این‌که خبر از یک فید موضوعی خاص می‌آید،
+دلیلی برای مرتبط دانستن آن نیست و نباید در قضاوت شما تأثیر بگذارد.
+- اگر خبر واقعاً به افغانستان، ایران، یا منطقه ربط ندارد (مثلاً یک خبر
+  ورزشی اروپایی، حادثه‌ی محلی یک کشور ثالث، یا خبر عمومی بی‌ربط)، آن را
+  "relevant": false بگذارید، حتی اگر از همان فید آمده باشد.
+- تبلیغات و اسپم همیشه false.
+- محتوای صریحاً ضد ایران همیشه false.
+- در قضاوت نهایی، به این سؤال ساده جواب بدهید: «اگر این خبر را به یک
+  خواننده‌ی افغان یا ایرانی نشان دهم، آیا واقعاً برایش مرتبط و بامعناست؟»
 
-نکته مهم درباره کشورها:
-"countries" و "country_flags" باید فقط از این نام‌های استاندارد استفاده کنند
-(دقیقاً همین املا، حداکثر ۳ کشور، به ترتیب ارتباط):
-افغانستان 🇦🇫 | ایران 🇮🇷 | پاکستان 🇵🇰 | هند 🇮🇳 | چین 🇨🇳 | تاجیکستان 🇹🇯 |
+نکته بسیار مهم و حیاتی درباره کشورها -- **ممنوعیت نزدیک‌سازی مصنوعی**:
+"countries" باید فقط کشورهایی را شامل شود که **واقعاً و به‌طور مستقیم در
+محتوای خبر نقش دارند** (مثلاً بازیگر رویداد، محل وقوع، یا طرف اصلی گفت‌وگو
+هستند). هرگز کشوری مثل افغانستان یا ایران را صرفاً برای «نزدیک‌تر کردن»
+خبر به کانال یا توجیه انتشار آن اضافه نکنید. یک خبر ورزشی اروپایی که هیچ
+بازیکن، تیم، یا رویداد افغان/ایرانی در آن نیست، نباید هیچ‌کدام از این
+کشورها را در "countries" داشته باشد -- حتی اگر از فید افغانستان آمده باشد.
+اگر هیچ کشور مرتبطی در متن نیست، "countries" را آرایه‌ی خالی بگذارید.
+
+نام‌های استاندارد مجاز (دقیقاً همین املا، حداکثر ۳ کشور، به ترتیب ارتباط):
+افغانستان 🇦🇫 | ایران 🇮🇷 | پاکستان 🇵🇰 | هند 🇮🇳 | تاجیکستان 🇹🇯 |
 ازبکستان 🇺🇿 | ترکمنستان 🇹🇲 | قزاقستان 🇰🇿 | قرقیزستان 🇰🇬
 اولویت را شما تعیین نکنید؛ آن در کد به‌صورت خودکار محاسبه می‌شود.
+
+{IRAF_TOPIC_QUALIFICATION_RULES}
 
 فقط و فقط یک شیء JSON معتبر برگردانید (بدون هیچ متن اضافه، بدون Markdown)
 با این ساختار دقیق:
 {{
   "relevant": true/false,
-  "category": "سیاسی|اقتصادی|فرهنگی|مهاجرین|ورزشی",
+  "category": "سیاسی|اقتصادی|فرهنگی|مهاجرین|اجتماعی|ورزشی",
   "title_fa": "عنوان ترجمه‌شده و خبری به فارسی (بدون هشتگ یا ایموجی)",
   "summary_fa": "خلاصه ۳ تا ۵ جمله‌ای روان و بی‌طرف به فارسی، در حد یک پاراگراف کامل خبری",
   "key_points": ["نکته کلیدی اول", "نکته کلیدی دوم", "نکته کلیدی سوم (حداکثر ۴ نکته)"],
-  "countries": ["افغانستان", "پاکستان"],
-  "country_flags": ["🇦🇫", "🇵🇰"],
-  "reason": "دلیل کوتاه ارتباط یا عدم ارتباط"
+  "countries": ["افغانستان"],
+  "topic_qualifies": true/false,
+  "reason": "دلیل کوتاه ارتباط یا عدم ارتباط، و دلیل انتخاب کشورها"
 }}
 
 نکات مهم:
 - "key_points" باید نکات مشخص و خبری باشند، نه تکرار خلاصه.
+- "topic_qualifies" را طبق قوانین بالا (IRAF_TOPIC_QUALIFICATION_RULES) پر کنید -- فقط برای خبرهای ایران/پاکستان/هند معنا دارد؛ برای بقیه false بگذارید.
 - اگر خبر مرتبط نیست، "relevant" را false بگذارید و بقیه فیلدها را خالی/آرایه خالی رها کنید.
 """
     user_prompt = f"""
@@ -711,7 +762,7 @@ def analyze_article(article: dict) -> dict:
         return {"relevant": False}
 
     if result.get("relevant"):
-        result["priority"] = compute_priority(result.get("category", ""), result.get("countries", []))
+        result["priority"] = compute_priority(result.get("countries", []), bool(result.get("topic_qualifies")))
         result["country_flags"] = flags_for_countries(result.get("countries", []))
 
     return result
