@@ -2768,3 +2768,12 @@ tag:google.com,2005:reader/item/0000000bb374ef00
 tag:google.com,2005:reader/item/0000000bb3780d18
 tag:google.com,2005:reader/item/0000000bb3780d1a
 tag:google.com,2005:reader/item/0000000bb3750e90
+tag:google.com,2005:reader/item/0000000bb379ca82
+tag:google.com,2005:reader/item/0000000bb379ca87
+tag:google.com,2005:reader/item/0000000bb379ca8a
+tag:google.com,2005:reader/item/0000000bb379f733
+tag:google.com,2005:reader/item/0000000bb37963d2
+tag:google.com,2005:reader/item/0000000bb37963d3
+tag:google.com,2005:reader/item/0000000bb37963d4
+tag:google.com,2005:reader/item/0000000bb37849d7
+tag:google.com,2005:reader/item/0000000bb3792f5d
