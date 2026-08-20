@@ -765,6 +765,17 @@ def analyze_article(article: dict) -> dict:
         result["priority"] = compute_priority(result.get("countries", []), bool(result.get("topic_qualifies")))
         result["country_flags"] = flags_for_countries(result.get("countries", []))
 
+        # Deterministic scope guard: this channel covers Afghanistan, and
+        # Iran/Pakistan/India/Central-Asia ONLY through the specific lenses
+        # defined in IRAF_TOPIC_QUALIFICATION_RULES. If none of the 4
+        # priority tiers matched, the story is out of scope (e.g. a purely
+        # domestic Iranian human-interest story) -- override "relevant" to
+        # False in code, rather than trusting the model's own judgement
+        # alone (which was letting such stories through with just a low
+        # priority number instead of being excluded).
+        if result["priority"] == DEFAULT_PRIORITY:
+            result["relevant"] = False
+
     return result
 
 
