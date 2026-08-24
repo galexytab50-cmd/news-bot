@@ -6766,3 +6766,5 @@ tag:google.com,2005:reader/item/0000000bb617d2c1
 tag:google.com,2005:reader/item/0000000bb617d2c2
 tag:google.com,2005:reader/item/0000000bb617d2c3
 tag:google.com,2005:reader/item/0000000bb617d2c4
+tag:google.com,2005:reader/item/0000000bb61a2f1f
+tag:google.com,2005:reader/item/0000000bb61b07ee
