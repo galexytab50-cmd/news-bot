@@ -6718,3 +6718,9 @@ tag:google.com,2005:reader/item/0000000bb60300ba
 tag:google.com,2005:reader/item/0000000bb60300bb
 tag:google.com,2005:reader/item/0000000bb60300bc
 tag:google.com,2005:reader/item/0000000bb60300bd
+tag:google.com,2005:reader/item/0000000bb6059f69
+tag:google.com,2005:reader/item/0000000bb6059f6a
+tag:google.com,2005:reader/item/0000000bb6059f6b
+tag:google.com,2005:reader/item/0000000bb6059f6c
+tag:google.com,2005:reader/item/0000000bb605045e
+tag:google.com,2005:reader/item/0000000bb6059f6d
