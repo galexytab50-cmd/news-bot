@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import json
+import html
 import hashlib
 import difflib
 import logging
@@ -835,12 +836,13 @@ def format_article_message(art: dict) -> str:
     tag = CATEGORY_MAP.get(category, f"#{category}")
     category_emoji = tag.split()[-1] if " " in tag else ""
     flags = "".join(art.get("country_flags", []) or [])
-    title = art.get("title_fa", "")
-    summary = art.get("summary_fa", "")
-    key_points = art.get("key_points", []) or []
+    title = html.escape(art.get("title_fa", ""))
+    summary = html.escape(art.get("summary_fa", ""))
+    key_points = [html.escape(p) for p in (art.get("key_points", []) or [])]
     countries = art.get("countries", []) or []
     priority = art.get("priority", "")
     link = art.get("link", "")
+    source_name = html.escape(art.get("source", "") or "منبع خبر")
 
     lines = [f"#{category}", ""]
     lines.append(f"{flags} {category_emoji} {title}".strip())
@@ -858,7 +860,7 @@ def format_article_message(art: dict) -> str:
         lines.append(f"🌍 موضوع: {' و '.join(countries)} | اولویت {priority}")
     if link:
         lines.append("")
-        lines.append(f'🔗 <a href="{link}">منبع خبر</a>')
+        lines.append(f'🔗 <a href="{html.escape(link, quote=True)}">{source_name}</a>')
 
     return "\n".join(lines)
 
@@ -969,6 +971,7 @@ def main():
             continue
 
         result["link"] = art["link"]
+        result["source"] = art.get("source", "")
         to_publish.append((result, art))
 
     log.info("%d articles approved for publishing (after all duplicate layers)", len(to_publish))
