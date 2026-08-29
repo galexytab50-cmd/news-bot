@@ -2,7 +2,7 @@ name: IRAF Monitoring Pipeline
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch: {}
 
 # Prevents two runs from processing the same Inoreader batch at the same
