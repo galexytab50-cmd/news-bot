@@ -56,7 +56,7 @@ SEMANTIC_TIME_WINDOW_DAYS = 14  # how far back to look for fuzzy/semantic candid
 REPORTS_DIR = Path("reports")
 REPORTS_DIR.mkdir(exist_ok=True)
 
-MAX_ARTICLES_PER_RUN = int(os.environ.get("MAX_ARTICLES_PER_RUN", "0"))  # 0 = no limit
+MAX_ARTICLES_PER_RUN = int(os.environ.get("MAX_ARTICLES_PER_RUN", "40"))  # keeps each run's duration bounded/predictable
 
 CATEGORY_MAP = {
     "سیاسی": "#سیاسی 🏛️",
@@ -913,6 +913,7 @@ def main():
     published_count = 0
     skipped_duplicate_count = 0
     skipped_already_processed_count = 0
+    processed_this_run = 0
     to_publish = []  # (result, art) pairs approved for sending, before ordering
 
     for art in articles:
@@ -920,6 +921,13 @@ def main():
         if article_key and article_key in processed_ids:
             skipped_already_processed_count += 1
             continue  # already analyzed in a previous run (relevant or not) -- don't re-spend tokens
+
+        if processed_this_run >= MAX_ARTICLES_PER_RUN:
+            log.info(
+                "Reached MAX_ARTICLES_PER_RUN=%d for this run; remaining articles will be picked up in the next scheduled run.",
+                MAX_ARTICLES_PER_RUN,
+            )
+            break
 
         try:
             is_dup, _log_entry = check_duplicate(art, url_set, guid_set, hash_set, windowed_store)
@@ -929,6 +937,8 @@ def main():
         except Exception as e:
             log.error("Duplicate check failed for '%s': %s -- skipping to be safe", art["title"], e)
             continue
+
+        processed_this_run += 1
 
         if is_dup:
             skipped_duplicate_count += 1
