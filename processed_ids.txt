@@ -14099,3 +14099,5 @@ tag:google.com,2005:reader/item/0000000bbd362efa
 tag:google.com,2005:reader/item/0000000bbd362efd
 tag:google.com,2005:reader/item/0000000bbd362eff
 tag:google.com,2005:reader/item/0000000bbd362f02
+tag:google.com,2005:reader/item/0000000bbd380164
+tag:google.com,2005:reader/item/0000000bbd37d76f
