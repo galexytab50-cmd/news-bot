@@ -15681,3 +15681,5 @@ tag:google.com,2005:reader/item/0000000bbe474c42
 tag:google.com,2005:reader/item/0000000bbe47218a
 tag:google.com,2005:reader/item/0000000bbe46bf4c
 tag:google.com,2005:reader/item/0000000bbe474c44
+tag:google.com,2005:reader/item/0000000bbe497b4d
+tag:google.com,2005:reader/item/0000000bbe48d72b
