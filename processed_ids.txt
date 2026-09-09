@@ -18418,3 +18418,5 @@ tag:google.com,2005:reader/item/0000000bc04376c0
 tag:google.com,2005:reader/item/0000000bc04376c4
 tag:google.com,2005:reader/item/0000000bc042428d
 tag:google.com,2005:reader/item/0000000bc04376c8
+tag:google.com,2005:reader/item/0000000bc0449cf0
+tag:google.com,2005:reader/item/0000000bc0449cf5
