@@ -20932,3 +20932,5 @@ tag:google.com,2005:reader/item/0000000bc22b75be
 tag:google.com,2005:reader/item/0000000bc22b75bf
 tag:google.com,2005:reader/item/0000000bc22cc01d
 tag:google.com,2005:reader/item/0000000bc22cc01e
+tag:google.com,2005:reader/item/0000000bc22f1cf8
+tag:google.com,2005:reader/item/0000000bc22e9686
