@@ -21554,3 +21554,5 @@ tag:google.com,2005:reader/item/0000000bc2923856
 tag:google.com,2005:reader/item/0000000bc29360c0
 tag:google.com,2005:reader/item/0000000bc2921dfe
 tag:google.com,2005:reader/item/0000000bc293f35e
+tag:google.com,2005:reader/item/0000000bc2948e6e
+tag:google.com,2005:reader/item/0000000bc2948e77
