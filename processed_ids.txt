@@ -26045,3 +26045,5 @@ tag:google.com,2005:reader/item/0000000bc6c412c2
 tag:google.com,2005:reader/item/0000000bc6c40769
 tag:google.com,2005:reader/item/0000000bc6c4076a
 tag:google.com,2005:reader/item/0000000bc6c412c3
+tag:google.com,2005:reader/item/0000000bc6c5e1dc
+tag:google.com,2005:reader/item/0000000bc6c71395
