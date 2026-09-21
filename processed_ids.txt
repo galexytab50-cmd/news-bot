@@ -26761,3 +26761,5 @@ tag:google.com,2005:reader/item/0000000bc73c0554
 tag:google.com,2005:reader/item/0000000bc73ef8cb
 tag:google.com,2005:reader/item/0000000bc73ef8d0
 tag:google.com,2005:reader/item/0000000bc73e46d1
+tag:google.com,2005:reader/item/0000000bc740adda
+tag:google.com,2005:reader/item/0000000bc740addb
