@@ -27589,3 +27589,5 @@ tag:google.com,2005:reader/item/0000000bc7c955e2
 tag:google.com,2005:reader/item/0000000bc7c98645
 tag:google.com,2005:reader/item/0000000bc7c955e9
 tag:google.com,2005:reader/item/0000000bc7c955ec
+tag:google.com,2005:reader/item/0000000bc7cde1ce
+tag:google.com,2005:reader/item/0000000bc7ccfbcb
