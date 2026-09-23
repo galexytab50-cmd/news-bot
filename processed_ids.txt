@@ -28304,3 +28304,5 @@ tag:google.com,2005:reader/item/0000000bc89960e2
 tag:google.com,2005:reader/item/0000000bc89960e3
 tag:google.com,2005:reader/item/0000000bc89960e4
 tag:google.com,2005:reader/item/0000000bc89960e5
+tag:google.com,2005:reader/item/0000000bc89b6c16
+tag:google.com,2005:reader/item/0000000bc89ab523
