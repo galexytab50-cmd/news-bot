@@ -32622,3 +32622,5 @@ tag:google.com,2005:reader/item/0000000bcbab7069
 tag:google.com,2005:reader/item/0000000bcbab706b
 tag:google.com,2005:reader/item/0000000bcbab706c
 tag:google.com,2005:reader/item/0000000bcbab706d
+tag:google.com,2005:reader/item/0000000bcbaff38b
+tag:google.com,2005:reader/item/0000000bcbaf038a
