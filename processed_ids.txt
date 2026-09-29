@@ -33463,3 +33463,5 @@ tag:google.com,2005:reader/item/0000000bcc62a09d
 tag:google.com,2005:reader/item/0000000bcc62a09e
 tag:google.com,2005:reader/item/0000000bcc62a09f
 tag:google.com,2005:reader/item/0000000bcc62a0a0
+tag:google.com,2005:reader/item/0000000bcc67c495
+tag:google.com,2005:reader/item/0000000bcc6773d1
