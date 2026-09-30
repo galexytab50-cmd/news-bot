@@ -34276,3 +34276,5 @@ tag:google.com,2005:reader/item/0000000bcd04712e
 tag:google.com,2005:reader/item/0000000bcd047131
 tag:google.com,2005:reader/item/0000000bcd073edb
 tag:google.com,2005:reader/item/0000000bcd072775
+tag:google.com,2005:reader/item/0000000bcd0a3697
+tag:google.com,2005:reader/item/0000000bcd0a369b
