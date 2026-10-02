@@ -36880,3 +36880,5 @@ tag:google.com,2005:reader/item/0000000bcf24e460
 tag:google.com,2005:reader/item/0000000bcf25b8a8
 tag:google.com,2005:reader/item/0000000bcf25b8a9
 tag:google.com,2005:reader/item/0000000bcf24e461
+tag:google.com,2005:reader/item/0000000bcf2af80b
+tag:google.com,2005:reader/item/0000000bcf2a43cf
