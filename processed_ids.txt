@@ -38322,3 +38322,5 @@ tag:google.com,2005:reader/item/0000000bd014418e
 tag:google.com,2005:reader/item/0000000bd0133b8b
 tag:google.com,2005:reader/item/0000000bd0133b8d
 tag:google.com,2005:reader/item/0000000bd0133b8f
+tag:google.com,2005:reader/item/0000000bd01683ac
+tag:google.com,2005:reader/item/0000000bd015ae37
