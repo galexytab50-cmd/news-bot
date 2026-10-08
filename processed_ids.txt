@@ -41028,3 +41028,5 @@ tag:google.com,2005:reader/item/0000000bd24bb67a
 tag:google.com,2005:reader/item/0000000bd24bb67b
 tag:google.com,2005:reader/item/0000000bd24bb67c
 tag:google.com,2005:reader/item/0000000bd24bb67d
+tag:google.com,2005:reader/item/0000000bd24d38bc
+tag:google.com,2005:reader/item/0000000bd24da274
