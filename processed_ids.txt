@@ -42668,3 +42668,5 @@ tag:google.com,2005:reader/item/0000000bd3964088
 tag:google.com,2005:reader/item/0000000bd396408a
 tag:google.com,2005:reader/item/0000000bd396408d
 tag:google.com,2005:reader/item/0000000bd396408f
+tag:google.com,2005:reader/item/0000000bd397b2fd
+tag:google.com,2005:reader/item/0000000bd397b2fe
