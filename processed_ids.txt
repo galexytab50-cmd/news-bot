@@ -44244,3 +44244,5 @@ tag:google.com,2005:reader/item/0000000bd52f4671
 tag:google.com,2005:reader/item/0000000bd5304504
 tag:google.com,2005:reader/item/0000000bd52fa165
 tag:google.com,2005:reader/item/0000000bd52fa166
+tag:google.com,2005:reader/item/0000000bd532346d
+tag:google.com,2005:reader/item/0000000bd5312982
