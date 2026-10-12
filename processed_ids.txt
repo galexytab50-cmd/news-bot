@@ -44229,3 +44229,5 @@ tag:google.com,2005:reader/item/0000000bd52a0800
 tag:google.com,2005:reader/item/0000000bd52a0801
 tag:google.com,2005:reader/item/0000000bd52b88ac
 tag:google.com,2005:reader/item/0000000bd52d2c4d
+tag:google.com,2005:reader/item/0000000bd52ea6ca
+tag:google.com,2005:reader/item/0000000bd52e8923
