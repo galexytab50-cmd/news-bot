@@ -47169,3 +47169,5 @@ tag:google.com,2005:reader/item/0000000bd786946e
 tag:google.com,2005:reader/item/0000000bd786946f
 tag:google.com,2005:reader/item/0000000bd7869470
 tag:google.com,2005:reader/item/0000000bd7869471
+tag:google.com,2005:reader/item/0000000bd7875e2d
+tag:google.com,2005:reader/item/0000000bd787c99e
