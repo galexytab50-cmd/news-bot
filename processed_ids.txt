@@ -52113,3 +52113,5 @@ tag:google.com,2005:reader/item/0000000bd9d3a7a0
 tag:google.com,2005:reader/item/0000000bd9d3a7a5
 tag:google.com,2005:reader/item/0000000bd9d3a7a7
 tag:google.com,2005:reader/item/0000000bd9d244d9
+tag:google.com,2005:reader/item/0000000bd9d6bcff
+tag:google.com,2005:reader/item/0000000bd9d6bd00
