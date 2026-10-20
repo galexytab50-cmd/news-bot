@@ -52150,3 +52150,5 @@ tag:google.com,2005:reader/item/0000000bd9f420f2
 tag:google.com,2005:reader/item/0000000bd9f3bc3a
 tag:google.com,2005:reader/item/0000000bd9f3bc3c
 tag:google.com,2005:reader/item/0000000bd9f67b7f
+tag:google.com,2005:reader/item/0000000bd9f99533
+tag:google.com,2005:reader/item/0000000bd9f96ade
