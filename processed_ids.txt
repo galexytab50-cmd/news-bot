@@ -54909,3 +54909,5 @@ tag:google.com,2005:reader/item/0000000bdc9333a1
 tag:google.com,2005:reader/item/0000000bdc91ffcb
 tag:google.com,2005:reader/item/0000000bdc91f01a
 tag:google.com,2005:reader/item/0000000bdc9333a2
+tag:google.com,2005:reader/item/0000000bdc996471
+tag:google.com,2005:reader/item/0000000bdc994b59
