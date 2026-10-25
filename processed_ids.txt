@@ -56103,3 +56103,5 @@ tag:google.com,2005:reader/item/0000000bdd6d1119
 tag:google.com,2005:reader/item/0000000bdd6d1db0
 tag:google.com,2005:reader/item/0000000bdd6d111a
 tag:google.com,2005:reader/item/0000000bdd6e9050
+tag:google.com,2005:reader/item/0000000bdd714ef8
+tag:google.com,2005:reader/item/0000000bdd7118e8
