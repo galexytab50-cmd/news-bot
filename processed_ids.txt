@@ -56815,3 +56815,5 @@ tag:google.com,2005:reader/item/0000000bdddfcada
 tag:google.com,2005:reader/item/0000000bdddff197
 tag:google.com,2005:reader/item/0000000bdddff198
 tag:google.com,2005:reader/item/0000000bdddff19a
+tag:google.com,2005:reader/item/0000000bdde49e93
+tag:google.com,2005:reader/item/0000000bdde36ef4
