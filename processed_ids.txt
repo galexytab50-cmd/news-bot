@@ -68979,3 +68979,5 @@ tag:google.com,2005:reader/item/0000000be8ecd763
 tag:google.com,2005:reader/item/0000000be8ecd767
 tag:google.com,2005:reader/item/0000000be8ecd769
 tag:google.com,2005:reader/item/0000000be8ecd76a
+tag:google.com,2005:reader/item/0000000be8f047f0
+tag:google.com,2005:reader/item/0000000be8efe4b1
