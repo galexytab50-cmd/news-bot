@@ -69074,3 +69074,5 @@ tag:google.com,2005:reader/item/0000000be913471f
 tag:google.com,2005:reader/item/0000000be9130c51
 tag:google.com,2005:reader/item/0000000be9134720
 tag:google.com,2005:reader/item/0000000be9130c52
+tag:google.com,2005:reader/item/0000000be9162c23
+tag:google.com,2005:reader/item/0000000be915f3b7
