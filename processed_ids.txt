@@ -72043,3 +72043,5 @@ tag:google.com,2005:reader/item/0000000beb3563e8
 tag:google.com,2005:reader/item/0000000beb3563e9
 tag:google.com,2005:reader/item/0000000beb3563ea
 tag:google.com,2005:reader/item/0000000beb3563eb
+tag:google.com,2005:reader/item/0000000beb399f29
+tag:google.com,2005:reader/item/0000000beb38199d
