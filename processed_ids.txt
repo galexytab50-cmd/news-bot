@@ -76686,3 +76686,5 @@ tag:google.com,2005:reader/item/0000000bef48068f
 tag:google.com,2005:reader/item/0000000bef484a79
 tag:google.com,2005:reader/item/0000000bef481dee
 tag:google.com,2005:reader/item/0000000bef38b78a
+tag:google.com,2005:reader/item/0000000bef4a7aee
+tag:google.com,2005:reader/item/0000000bef4a7af0
