@@ -78447,3 +78447,5 @@ tag:google.com,2005:reader/item/0000000bf0a2983e
 tag:google.com,2005:reader/item/0000000bf0a2983f
 tag:google.com,2005:reader/item/0000000bf0a29840
 tag:google.com,2005:reader/item/0000000bf0a29842
+tag:google.com,2005:reader/item/0000000bf0a62523
+tag:google.com,2005:reader/item/0000000bf0a63145
