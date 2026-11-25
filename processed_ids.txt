@@ -79257,3 +79257,5 @@ tag:google.com,2005:reader/item/0000000bf138f35a
 tag:google.com,2005:reader/item/0000000bf138f35c
 tag:google.com,2005:reader/item/0000000bf138f35f
 tag:google.com,2005:reader/item/0000000bf138f361
+tag:google.com,2005:reader/item/0000000bf13d1836
+tag:google.com,2005:reader/item/0000000bf13b97d4
