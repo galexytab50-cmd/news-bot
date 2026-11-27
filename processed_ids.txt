@@ -80225,3 +80225,5 @@ tag:google.com,2005:reader/item/0000000bf205ec66
 tag:google.com,2005:reader/item/0000000bf205704b
 tag:google.com,2005:reader/item/0000000bf2052607
 tag:google.com,2005:reader/item/0000000bf202a85b
+tag:google.com,2005:reader/item/0000000bf20914ad
+tag:google.com,2005:reader/item/0000000bf208b377
