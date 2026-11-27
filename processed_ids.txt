@@ -80948,3 +80948,5 @@ tag:google.com,2005:reader/item/0000000bf28f68db
 tag:google.com,2005:reader/item/0000000bf28f0951
 tag:google.com,2005:reader/item/0000000bf2915deb
 tag:google.com,2005:reader/item/0000000bf28fe3ce
+tag:google.com,2005:reader/item/0000000bf292b988
+tag:google.com,2005:reader/item/0000000bf292f7ca
